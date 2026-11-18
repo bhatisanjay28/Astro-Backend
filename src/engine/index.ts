@@ -40,6 +40,15 @@ export {
   signOf,
   wholeSignHouses,
 } from "./kundli";
+export { findMuhurats, type MuhuratDayResult, type MuhuratFinderResult } from "./muhurat";
+export {
+  DEFAULT_MUHURAT_RULES,
+  evaluateRules,
+  MUHURAT_EVENT_TYPES,
+  type MuhuratEventType,
+  type MuhuratRule,
+  type RuleEvaluation,
+} from "./muhurat-rules";
 export { karanaName, NAKSHATRAS, NAKSHATRAS_HI, TITHIS, YOGAS } from "./names";
 export { ketuMeanLon, rahuMeanLon } from "./nodes";
 export {
