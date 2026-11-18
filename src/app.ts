@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import type { AppEnv } from "./env";
 import { apiRoute } from "./routes/api";
 import { healthRoute } from "./routes/health";
@@ -8,6 +9,19 @@ import { muhuratRoute } from "./routes/v1/muhurat";
 import { panchangRoute } from "./routes/v1/panchang";
 
 const app = new Hono<AppEnv>();
+
+/**
+ * CORS: origin allowlist (PRD §14). Production origins + local dev ports.
+ * GET endpoints are public data; POST /api/v1/kundli is stateless and no-PII,
+ * so no credentials are ever exchanged cross-origin.
+ */
+const ALLOWED_ORIGIN_PATTERN =
+  /^https:\/\/(vyotish\.com|www\.vyotish\.com|.*\.vyotish\.workers\.dev)$|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+app.use(
+  "/api/*",
+  cors({ origin: (origin) => (ALLOWED_ORIGIN_PATTERN.test(origin) ? origin : null) }),
+);
 
 app.route("/", healthRoute);
 app.route("/", apiRoute);

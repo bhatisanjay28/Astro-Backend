@@ -61,6 +61,23 @@ describe("GET /api/v1", () => {
   });
 });
 
+describe("CORS", () => {
+  it("allows the production origin", async () => {
+    const res = await app.request("/api/v1", { headers: { Origin: "https://vyotish.com" } });
+    expect(res.headers.get("access-control-allow-origin")).toBe("https://vyotish.com");
+  });
+
+  it("allows local dev origins", async () => {
+    const res = await app.request("/api/v1", { headers: { Origin: "http://127.0.0.1:4321" } });
+    expect(res.headers.get("access-control-allow-origin")).toBe("http://127.0.0.1:4321");
+  });
+
+  it("withholds CORS headers from unknown origins", async () => {
+    const res = await app.request("/api/v1", { headers: { Origin: "https://evil.example" } });
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+  });
+});
+
 describe("unknown top-level route", () => {
   it("returns contract-shaped 404", async () => {
     const res = await app.request("/nope");
