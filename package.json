@@ -1,15 +1,27 @@
 {
   "name": "astro-backend",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Vyotish-Astro backend API (starter scaffold)",
-  "main": "src/server.js",
-  "type": "commonjs",
+  "description": "Vyotish-Astro backend API — Hono + TypeScript on Cloudflare Workers (Bun for local dev)",
+  "type": "module",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js"
+    "dev": "bun --hot src/index.ts",
+    "dev:workers": "wrangler dev",
+    "test": "bun test",
+    "lint": "biome check src test",
+    "format": "biome format --write src test",
+    "typecheck": "tsc --noEmit",
+    "deploy": "wrangler deploy",
+    "docker:build": "docker build -t astro-backend .",
+    "docker:run": "docker run --rm -p 3000:3000 --env-file .env astro-backend"
   },
   "dependencies": {
-    "express": "^4.21.2"
+    "hono": "^4.13.19"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.8",
+    "@types/bun": "^1.4.4",
+    "typescript": "^5.9.0",
+    "wrangler": "^4.0.0"
   }
 }

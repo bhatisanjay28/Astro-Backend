@@ -1,8 +1,12 @@
 node_modules
-npm-debug.log*
+.wrangler
+.dev.vars
+.dev.vars.*
 .env
 .env.*
-!.env.example
+npm-debug.log*
+*.log
+test
 .git
 Dockerfile
 .dockerignore

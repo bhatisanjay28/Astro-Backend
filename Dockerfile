@@ -1,19 +1,19 @@
 # Astro-Backend — Vyotish-Astro backend API
-FROM node:22-alpine
+# Local dev parity only (DECISIONS.md D2) — production deploys via `wrangler deploy`.
+# syntax=docker/dockerfile:1
+ARG BUN_VERSION=1.4.4
 
+FROM oven/bun:${BUN_VERSION}-slim AS deps
 WORKDIR /app
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile --production
 
-# Install dependencies first (better layer caching)
-COPY package.json package-lock.json* ./
-RUN npm install --omit=dev
-
-# App source
-COPY src ./src
-
+FROM oven/bun:${BUN_VERSION}-slim AS runner
+WORKDIR /app
 ENV NODE_ENV=production
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json ./
+COPY src ./src
 EXPOSE 3000
-
-# Run as non-root
-USER node
-
-CMD ["node", "src/server.js"]
+USER bun
+CMD ["bun", "src/index.ts"]

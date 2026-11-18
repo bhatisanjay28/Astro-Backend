@@ -1,0 +1,15 @@
+{
+  // Cloudflare Workers config — production deploy via `wrangler deploy` (DECISIONS.md D2).
+  // Secrets go in Worker secrets (`wrangler secret put …`), never in this file (PRD §14).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "astro-backend",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "ENV": "development"
+  }
+  // Cron Triggers for daily Panchang/horoscope refresh land with Epic 3.1.
+}

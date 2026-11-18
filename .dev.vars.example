@@ -1,0 +1,4 @@
+# Wrangler local dev secrets (same values as .env) — NEVER commit .dev.vars.
+ENV=development
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
