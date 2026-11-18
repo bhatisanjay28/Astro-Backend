@@ -3,12 +3,14 @@ import type { AppEnv } from "./env";
 import { apiRoute } from "./routes/api";
 import { healthRoute } from "./routes/health";
 import { v1Route } from "./routes/v1";
+import { panchangRoute } from "./routes/v1/panchang";
 
 const app = new Hono<AppEnv>();
 
 app.route("/", healthRoute);
 app.route("/", apiRoute);
 app.route("/api/v1", v1Route);
+app.route("/api/v1", panchangRoute);
 
 /**
  * Contract v1 (docs/plan/epics.md): success `{ data, meta? }`;

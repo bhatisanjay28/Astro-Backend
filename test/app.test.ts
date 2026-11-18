@@ -48,7 +48,8 @@ describe("GET /api/v1", () => {
     const body = await json<V1RootBody>(res);
     expect(body.data.version).toBe("v1");
     expect(Array.isArray(body.data.planned)).toBe(true);
-    expect(body.data.implemented).toEqual([]);
+    // panchang shipped with Epic 1/3.1 — implemented list must include it
+    expect(body.data.implemented.some((e) => e.includes("/api/v1/panchang"))).toBe(true);
   });
 
   it("returns contract-shaped 404 for unknown v1 routes", async () => {

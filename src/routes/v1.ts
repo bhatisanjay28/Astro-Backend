@@ -31,7 +31,9 @@ export const v1Route = new Hono<AppEnv>().get("/", (c) =>
         "GET  /api/v1/settings/public",
         "*    /api/v1/admin/* (auth: admin/editor)",
       ],
-      implemented: [],
+      implemented: [
+        "GET /api/v1/panchang (coords mode; city mode activates with service credentials)",
+      ],
     },
   }),
 );

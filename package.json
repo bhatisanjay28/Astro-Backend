@@ -16,6 +16,7 @@
     "docker:run": "docker run --rm -p 3000:3000 --env-file .env astro-backend"
   },
   "dependencies": {
+    "astronomy-engine": "^2.1.19",
     "hono": "^4.13.19"
   },
   "devDependencies": {
