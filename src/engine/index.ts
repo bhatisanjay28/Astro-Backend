@@ -17,6 +17,7 @@ export {
   sunSiderealLon,
   sunTropicalLon,
 } from "./bodies";
+export { moonPhaseName, numerology, rashiAndNakshatra, sunSignTropical } from "./calculators";
 export {
   DASHA_ORDER,
   DASHA_YEARS,
