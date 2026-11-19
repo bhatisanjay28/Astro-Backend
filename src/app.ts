@@ -11,6 +11,7 @@ import { kundliRoute } from "./routes/v1/kundli";
 import { muhuratRoute } from "./routes/v1/muhurat";
 import { newsletterRoute } from "./routes/v1/newsletter";
 import { panchangRoute } from "./routes/v1/panchang";
+import { settingsRoute } from "./routes/v1/settings";
 
 const app = new Hono<AppEnv>();
 
@@ -37,6 +38,7 @@ app.route("/api/v1", horoscopeRoute);
 app.route("/api/v1", newsletterRoute);
 app.route("/api/v1", citiesRoute);
 app.route("/api/v1", contentRoute);
+app.route("/api/v1", settingsRoute);
 
 /**
  * Contract v1 (docs/plan/epics.md): success `{ data, meta? }`;

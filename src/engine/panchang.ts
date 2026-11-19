@@ -88,6 +88,8 @@ export interface Panchang {
     purnimanta: LocalizedName;
     paksha: LocalizedName;
     adhika: boolean;
+    /** Epic 1.9 — the site-configured display month (primary of the two). */
+    primary: LocalizedName;
   };
   samvat: { vikram: number; shaka: number };
   choghadiya: { day: ChoghadiyaSlot[]; night: ChoghadiyaSlot[] };
@@ -236,6 +238,8 @@ export function computePanchang(input: {
   city?: { slug: string; name: string };
   /** ISO instant to treat as "now" for active-limb picking (tests / replays). */
   nowOverride?: string;
+  /** Epic 1.9 — which Amanta/Purnimanta month drives the `primary` display. */
+  month_system?: "amanta" | "purnimanta";
 }): Panchang {
   const { date, latitude, longitude, timezone, city } = input;
   const dayStart = zonedStartOfDay(date, timezone);
@@ -365,7 +369,14 @@ export function computePanchang(input: {
     brahma_muhurta: brahma,
     moonrise: moon.rise ? iso(moon.rise) : null,
     moonset: moon.set ? iso(moon.set) : null,
-    hindu_month: { amanta, purnimanta, paksha, adhika },
+    hindu_month: {
+      amanta,
+      purnimanta,
+      paksha,
+      adhika,
+      // Epic 1.9 — site-configurable primary month (default Purnimanta).
+      primary: (input.month_system ?? "purnimanta") === "amanta" ? amanta : purnimanta,
+    },
     samvat,
     choghadiya,
     hora,

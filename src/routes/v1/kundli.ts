@@ -3,6 +3,9 @@
  *
  * Body: { date: "YYYY-MM-DD", time: "HH:mm", lat, lng, tz } (+ optional
  * `northIndianStyle` display flag handled by the frontend, not here).
+ * Optional `options` (Epic 1.9, PRD §8): { ayanamsha, house_system,
+ * chart_style } — strict-validated; unknown values → 400. Site-wide defaults
+ * come from site_settings via GET /api/v1/settings.
  *
  * NO-PII POLICY (PRD §10): birth data is processed and returned — never
  * persisted. Consent note travels with the response meta.
@@ -10,9 +13,12 @@
 import { Hono } from "hono";
 import {
   ENGINE_VERSION,
+  type EngineConfig,
+  engineConfigProblems,
   lagna,
   navamshaSignIndex,
   planetaryPositions,
+  resolveEngineConfig,
   vimshottariFromMoon,
   wholeSignHouses,
 } from "../../engine";
@@ -27,6 +33,7 @@ interface KundliBody {
   lat?: number;
   lng?: number;
   tz?: string;
+  options?: Partial<EngineConfig>;
 }
 
 export const kundliRoute = new Hono<AppEnv>();
@@ -77,6 +84,21 @@ kundliRoute.post("/kundli", async (c) => {
     );
   }
 
+  // Epic 1.9 — strict engine-option validation (unknown value → 400).
+  const optionProblems = engineConfigProblems(body.options as Record<string, unknown> | undefined);
+  if (optionProblems.length > 0) {
+    return c.json(
+      {
+        error: {
+          code: "validation_error",
+          message: "options contains unsupported engine configuration values",
+          details: optionProblems,
+        },
+      },
+      400,
+    );
+  }
+
   // Birth instant: interpret date+time in the given IANA timezone (UTC-convert).
   const naive = Date.parse(`${date}T${birthTime}:00Z`);
   if (Number.isNaN(naive)) {
@@ -117,6 +139,9 @@ kundliRoute.post("/kundli", async (c) => {
 
   const navamsha = Object.fromEntries(grahas.map((p) => [p.planet, navamshaSignIndex(p.lon)]));
 
+  // Epic 1.9 — echo the resolved engine config for the chart renderer.
+  const engineConfig = resolveEngineConfig(body.options).config;
+
   return c.json({
     data: {
       birth: {
@@ -137,6 +162,7 @@ kundliRoute.post("/kundli", async (c) => {
     meta: {
       consent_note: "Birth details are processed on request and are not stored.",
       chart_styles: ["north_indian", "south_indian"],
+      engine_config: engineConfig,
     },
   });
 });

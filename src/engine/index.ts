@@ -26,6 +26,14 @@ export {
   choghadiyaNightSequence,
 } from "./choghadiya";
 export {
+  DEFAULT_ENGINE_CONFIG,
+  ENGINE_CONFIG_ALLOWED,
+  ENGINE_CONFIG_KEYS,
+  type EngineConfig,
+  engineConfigProblems,
+  resolveEngineConfig,
+} from "./config";
+export {
   DASHA_ORDER,
   DASHA_YEARS,
   type DashaPeriod,
