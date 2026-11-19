@@ -18,6 +18,7 @@ import { matchRoute } from "./routes/v1/match";
 import { muhuratRoute } from "./routes/v1/muhurat";
 import { newsletterRoute } from "./routes/v1/newsletter";
 import { panchangRoute } from "./routes/v1/panchang";
+import { placesRoute } from "./routes/v1/places";
 import { requestsRoute } from "./routes/v1/requests";
 import { settingsRoute } from "./routes/v1/settings";
 
@@ -81,6 +82,7 @@ app.route("/api/v1", directoryRoute);
 app.route("/api/v1", requestsRoute);
 app.route("/api/v1", authRoute);
 app.route("/api/v1", blogRoute);
+app.route("/api/v1", placesRoute);
 app.route("/api/v1", adminRoute);
 
 /**

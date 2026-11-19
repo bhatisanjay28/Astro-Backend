@@ -17,6 +17,9 @@ const WINDOWS: Record<string, WindowConfig> = {
   "/api/v1/newsletter": { limit: 5, seconds: 60 },
   "/api/v1/requests/consultation": { limit: 5, seconds: 60 },
   "/api/v1/requests/puja": { limit: 5, seconds: 60 },
+  // place pickers type as they type — keep the Google bill bounded
+  "/api/v1/places/autocomplete": { limit: 30, seconds: 60 },
+  "/api/v1/places/resolve": { limit: 60, seconds: 60 },
 };
 
 const hits = new Map<string, { count: number; windowStart: number }>();

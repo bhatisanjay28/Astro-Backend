@@ -14,6 +14,10 @@ export type Bindings = {
   SUPABASE_URL?: string;
   /** Supabase service-role key — server-only, Epic 0.4 */
   SUPABASE_SERVICE_ROLE_KEY?: string;
+  /** Google Places (New) API key — birthplace pickers; proxied server-side so
+   * the browser never sees it. Without it, /places/* falls back to the
+   * cities table (same response shape). */
+  GOOGLE_PLACES_API_KEY?: string;
 };
 
 export type AppEnv = {
