@@ -35,6 +35,18 @@ app.use(
   cors({ origin: (origin) => (ALLOWED_ORIGIN_PATTERN.test(origin) ? origin : null) }),
 );
 
+/**
+ * Security headers on every API response (Epic 7.2, PRD §14). The API never
+ * frames anything, so X-Frame-Options DENY is safe; the TLS termination is
+ * Cloudflare's, which already enforces HTTPS on the workers.dev/vyotish.com.
+ */
+app.use("/api/*", async (c, next) => {
+  await next();
+  c.header("X-Content-Type-Options", "nosniff");
+  c.header("X-Frame-Options", "DENY");
+  c.header("Referrer-Policy", "strict-origin-when-cross-origin");
+});
+
 app.route("/", healthRoute);
 app.route("/", apiRoute);
 app.route("/api/v1", v1Route);

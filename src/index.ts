@@ -1,10 +1,17 @@
 import app from "./app";
+import { warmPanchangCache } from "./cron";
 
 /**
  * Worker entry point (production: `wrangler deploy`).
- * The Hono app's fetch handler is the Worker default export.
+ * The Hono app's fetch handler is the Worker fetch export; the cron trigger
+ * (wrangler.jsonc) warms/prunes the panchang cache daily (Epic 3.1b).
  */
-export default app;
+export default {
+  fetch: app.fetch,
+  scheduled: (event: unknown, env: unknown) => {
+    void warmPanchangCache(env as never).catch((err) => console.error("[cron] failed:", err));
+  },
+};
 
 /**
  * Local dev server via Bun (`bun run dev`) — DECISIONS.md D2.

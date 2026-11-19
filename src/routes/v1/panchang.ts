@@ -12,6 +12,7 @@
 import { Hono } from "hono";
 import { computePanchang } from "../../engine";
 import type { AppEnv } from "../../env";
+import { getCachedPanchang, storePanchang } from "../../lib/panchang-cache";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -48,8 +49,9 @@ panchangRoute.get("/panchang", async (c) => {
         503,
       );
     }
-    // City-mode computation is wired when the service key is set (Epic 3.1).
-    const url = `${supabaseUrl}/rest/v1/cities?slug=eq.${encodeURIComponent(q.city)}&select=slug,name,latitude,longitude,timezone`;
+    // City-mode: deterministic per (city, date) → panchang_cache write-through
+    // (Epic 3.1b). Cache hit returns the stored payload; miss computes + stores.
+    const url = `${supabaseUrl}/rest/v1/cities?slug=eq.${encodeURIComponent(q.city)}&select=id,slug,name,latitude,longitude,timezone`;
     const res = await fetch(url, {
       headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
     });
@@ -57,6 +59,7 @@ panchangRoute.get("/panchang", async (c) => {
       return c.json({ error: { code: "internal_error", message: "City lookup failed" } }, 500);
     }
     const rows = (await res.json()) as Array<{
+      id: string;
       slug: string;
       name: string;
       latitude: number;
@@ -67,6 +70,14 @@ panchangRoute.get("/panchang", async (c) => {
     if (!city) {
       return c.json({ error: { code: "not_found", message: `Unknown city: ${q.city}` } }, 404);
     }
+    const creds = { url: supabaseUrl, key: serviceKey };
+    const cached = await getCachedPanchang(creds, city.id, date);
+    if (cached) {
+      return c.json({
+        data: cached.payload,
+        meta: { cache: "hit", computed_at: cached.computedAt },
+      });
+    }
     const data = computePanchang({
       date,
       latitude: city.latitude,
@@ -74,7 +85,14 @@ panchangRoute.get("/panchang", async (c) => {
       timezone: city.timezone,
       city: { slug: city.slug, name: city.name },
     });
-    return c.json({ data });
+    await storePanchang(
+      creds,
+      city.id,
+      date,
+      city.timezone,
+      data as unknown as Record<string, unknown>,
+    );
+    return c.json({ data, meta: { cache: "miss" } });
   }
 
   if (lat === undefined || lng === undefined || !tz) {

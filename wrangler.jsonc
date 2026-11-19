@@ -10,6 +10,10 @@
   },
   "vars": {
     "ENV": "development"
+  },
+  "triggers": {
+    // daily panchang cache warm + prune (Epic 3.1b) — 00:15 UTC
+    "crons": ["15 0 * * *"]
   }
-  // Cron Triggers for daily Panchang/horoscope refresh land with Epic 3.1.
+  // ^ Cron Triggers land with 3.1b; horoscope refresh stays lazy (sweep on read).
 }
