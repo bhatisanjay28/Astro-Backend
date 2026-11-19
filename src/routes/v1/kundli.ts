@@ -12,6 +12,7 @@
  */
 import { Hono } from "hono";
 import {
+  divisionalsOf,
   ENGINE_VERSION,
   type EngineConfig,
   engineConfigProblems,
@@ -19,6 +20,7 @@ import {
   navamshaSignIndex,
   planetaryPositions,
   resolveEngineConfig,
+  sadeSati,
   vimshottariFromMoon,
   wholeSignHouses,
 } from "../../engine";
@@ -139,6 +141,14 @@ kundliRoute.post("/kundli", async (c) => {
 
   const navamsha = Object.fromEntries(grahas.map((p) => [p.planet, navamshaSignIndex(p.lon)]));
 
+  // Epic 1.10 — full divisionals (D3/D7/D9/D10/D12) per graha + Lagna, and
+  // Sade Sati from the natal Moon vs the current Saturn transit.
+  const divisionals = Object.fromEntries(
+    grahas.map((p) => [p.planet, divisionalsOf(p.lon)]),
+  ) as Record<string, Record<string, number>>;
+  divisionals["Lagna"] = divisionalsOf(asc.lon);
+  const sadeSatiNow = sadeSati(input, new Date());
+
   // Epic 1.9 — echo the resolved engine config for the chart renderer.
   const engineConfig = resolveEngineConfig(body.options).config;
 
@@ -156,6 +166,8 @@ kundliRoute.post("/kundli", async (c) => {
       grahas,
       houses,
       navamsha,
+      divisionals,
+      sade_sati: sadeSatiNow,
       dasha,
       engine_version: ENGINE_VERSION,
     },

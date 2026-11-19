@@ -24,6 +24,17 @@ export function moonSiderealLon(date: Date): number {
   return toSidereal(moonTropicalLon(date), date);
 }
 
+/** Geocentric tropical longitude of Saturn (ecliptic of date) — Epic 1.10. */
+function saturnTropicalLon(date: Date): number {
+  const vec = Astronomy.GeoVector(Astronomy.Body.Saturn, Astronomy.MakeTime(date), true);
+  return Astronomy.Ecliptic(vec).elon;
+}
+
+/** Sidereal longitude of Saturn (Lahiri) — drives Sade Sati transits. */
+export function saturnSiderealLon(date: Date): number {
+  return toSidereal(saturnTropicalLon(date), date);
+}
+
 /** Moon–Sun elongation (tropical, normalised 0–360) — drives tithi/karana. */
 export function elongation(date: Date): number {
   const d = moonTropicalLon(date) - sunTropicalLon(date);

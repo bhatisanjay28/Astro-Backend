@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { computePanchang, type LimbWindow, pickActiveLimb } from "../src/engine";
+import { computePanchang, ENGINE_VERSION, type LimbWindow, pickActiveLimb } from "../src/engine";
 
 /**
  * Epic 9.3 (D12) — the server picks "what the user should see right now".
@@ -64,7 +64,7 @@ describe("computePanchang active limbs (Epic 9.3)", () => {
 
   it("anchors picks to nowOverride and never leaks picking to the client", () => {
     const p = computePanchang(input);
-    expect(p.engine_version).toBe("1.2.0-alpha1");
+    expect(p.engine_version).toBe(ENGINE_VERSION);
     expect(p.active.as_of).toBe(input.nowOverride);
     for (const limb of ["tithi", "nakshatra", "yoga", "karana"] as const) {
       const active = p.active[limb];

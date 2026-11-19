@@ -71,3 +71,26 @@ Ashtakoota (36-guna milan) + Manglik dosha over two kundli inputs.
   identity, recomputation cross-checks, 24-month manglik invariants). A
   qualified Jyotishi must sign off before launch; every response carries the
   `verified` flag.
+
+## Transits & divisionals (`transits.ts`, `divisionals.ts` — Epic 1.10)
+
+**Sade Sati** (natal Moon vs Saturn transit):
+
+- Window = Saturn's FIRST entry into the 12th-from-Moon sign → FINAL exit from
+  the 2nd-from-Moon sign (published-table presentation); mid-window retro
+  excursions outside the trio (≤ ~6 months) do not end the window — an exit is
+  final only when Saturn stays out ≥ 200 days.
+- Instants from Saturn's true sidereal longitude via 20-day sampling + minute
+  bisection. EXTERNAL ANCHOR: for an Aquarius-moon chart the computed window
+  2020-01-24 → 2028-02-23 matches the published Capricorn-ingress /
+  Aries-ingress dates exactly.
+- Phase from the instantaneous offset (11/0/1 → 1/2/3); a mid-window retro dip
+  reports phase 3 (classical presentation keeps the last phase).
+- `verified: false` (P11) — definition choices need Jyotishi sign-off.
+
+**Divisional charts (Parashari vargas)** over sidereal longitude:
+
+- D3 drekkana (self/5th/9th), D7 saptamsha (odd→self, even→7th), D9 navamsha
+  (continuous, identical to kundli.navamshaSignIndex — sync-tested),
+  D10 dashamsha (odd→self, even→9th), D12 dwadashamsha (always self).
+- Exposed per graha + Lagna on POST /api/v1/kundli as `divisionals`.

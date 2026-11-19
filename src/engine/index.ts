@@ -12,6 +12,7 @@ export {
   moonRiseSet,
   moonSiderealLon,
   moonTropicalLon,
+  saturnSiderealLon,
   sunMoonSumSidereal,
   sunRiseSet,
   sunSiderealLon,
@@ -41,6 +42,16 @@ export {
   vimshottari,
   vimshottariFromMoon,
 } from "./dasha";
+export {
+  DIVISIONAL_CHARTS,
+  type DivisionalChart,
+  dashamshaSignIndex,
+  divisionalSignIndex,
+  divisionalsOf,
+  drekkanaSignIndex,
+  dwadashamshaSignIndex,
+  saptamshaSignIndex,
+} from "./divisionals";
 export { findWrappedCrossing, nextCrossing } from "./finders";
 export { type HinduMonthInfo, hinduCalendar, type LocalizedName } from "./hinduCalendar";
 export { type HoraNature, type HoraSlot, horaDay } from "./hora";
@@ -90,3 +101,8 @@ export {
   pickActiveLimb,
   type Segment,
 } from "./panchang";
+export {
+  type SadeSatiResult,
+  type SadeSatiWindow,
+  sadeSati,
+} from "./transits";
