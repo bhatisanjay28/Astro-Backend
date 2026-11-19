@@ -49,6 +49,18 @@ export {
   signOf,
   wholeSignHouses,
 } from "./kundli";
+export {
+  ASHTAKOOTA_MAX,
+  ASHTAKOOTA_THRESHOLD,
+  type AshtakootaResult,
+  ashtakoota,
+  type KootaName,
+  type KootaResult,
+  type ManglikResult,
+  type MatchProfile,
+  manglik,
+  matchProfile,
+} from "./matching";
 export { findMuhurats, type MuhuratDayResult, type MuhuratFinderResult } from "./muhurat";
 export {
   DEFAULT_MUHURAT_RULES,

@@ -50,3 +50,24 @@ no environment access. The backend routes call it; nothing else does.
 **Determinism & caching:** everything is a pure function of (time, coordinates) →
 panchang/kundli responses are cacheable per (city, date). `engine_version` is stamped
 on every response.
+
+## Matching module (`matching.ts` — Epic 1.8, PRD §5.5)
+
+Ashtakoota (36-guna milan) + Manglik dosha over two kundli inputs.
+
+- **Koota maxima**: varna 1 · vashya 2 · tara 3 · yoni 4 · graha-maitri 5 ·
+  gana 6 · bhakoot 7 · nadi 8 = 36; accept ≥ 18.
+- **Tables**: half-sign vashya (exact Moon longitude), yoni animals with the
+  unpaired mongoose (Uttara Ashadha), 7 enemy pairs, classical planetary
+  friendship (Moon enemyless), gana cross-scores (same 6 / deva–manushya 5 /
+  deva–rakshasa 1 / manushya–rakshasa 0), bhakoot dosha pairs 2/12 · 5/9 ·
+  6/8 with the mutual-friend-lords cancellation, nadi same → 0.
+- **Manglik**: Mars in houses 1, 2, 4, 7, 8, 12 from Lagna, Moon AND Venus;
+  cancelled when Mars is in Aries/Scorpio (own) or Capricorn (exalted).
+- **Verification status: `verified: false` (P11 launch blocker)** — the
+  school-dependent tables (gana cross-scores, yoni enemy matrix, vashya
+  bhakshya, manglik cancellation list) follow the most widely published
+  variant and are unit-tested for internal consistency only (self-match
+  identity, recomputation cross-checks, 24-month manglik invariants). A
+  qualified Jyotishi must sign off before launch; every response carries the
+  `verified` flag.
