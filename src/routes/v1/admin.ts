@@ -11,10 +11,17 @@
 import { Hono } from "hono";
 import type { AppEnvWithAdmin } from "../../env";
 import { requireAdmin } from "../../lib/admin-auth";
+import { adminMediaRoute } from "./admin/media";
+import { adminPostsRoute } from "./admin/posts";
+import { adminTaxonomyRoute } from "./admin/taxonomy";
 
 export const adminRoute = new Hono<AppEnvWithAdmin>();
 
 adminRoute.use("/admin/*", requireAdmin());
+
+adminRoute.route("/", adminPostsRoute);
+adminRoute.route("/", adminTaxonomyRoute);
+adminRoute.route("/", adminMediaRoute);
 
 adminRoute.get("/admin/me", (c) => {
   const admin = c.get("admin");
