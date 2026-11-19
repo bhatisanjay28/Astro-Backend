@@ -207,3 +207,23 @@ describe("POST /api/v1/requests/puja", () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe("GET /api/v1/festivals (Epic 3.2b)", () => {
+  it("returns festivals for an exact date", async () => {
+    mockSupabase(() => [
+      { name: "Diwali", name_hi: "दीपावली", date: "2026-11-08", description: "Festival of lights", is_sample: true },
+    ]);
+    const res = await app.request("/api/v1/festivals?date=2026-11-08", {}, BINDINGS);
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { data: { date: string; festivals: Array<{ name: string }> } };
+    expect(json.data.date).toBe("2026-11-08");
+    expect(json.data.festivals[0]?.name).toBe("Diwali");
+  });
+
+  it("400s on a bad date and 503s without creds", async () => {
+    const bad = await app.request("/api/v1/festivals?date=junk", {}, BINDINGS);
+    expect(bad.status).toBe(400);
+    const nocreds = await app.request("/api/v1/festivals?date=2026-11-08");
+    expect(nocreds.status).toBe(503);
+  });
+});

@@ -167,3 +167,41 @@ directoryRoute.get("/pujas/:slug", async (c) => {
   }
   return c.json({ data: pujaJson(row) });
 });
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/festivals?date=YYYY-MM-DD — festivals/vrats for a day (Epic 3.2b,
+// PRD §5.3). Sample seed rows carry is_sample=true (P10); admin-managed later.
+// ---------------------------------------------------------------------------
+
+directoryRoute.get("/festivals", async (c) => {
+  const date = c.req.query("date");
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return c.json({ error: { code: "validation_error", message: "date must be YYYY-MM-DD" } }, 400);
+  }
+  const supabaseUrl = c.env?.SUPABASE_URL;
+  const serviceKey = c.env?.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceKey) return unavailable(c, "Festival data");
+  const rows = await restGet<{
+    name: string;
+    name_hi: string | null;
+    date: string | null;
+    description: string | null;
+    is_sample: boolean;
+  }>(
+    supabaseUrl,
+    serviceKey,
+    `festivals?date=eq.${date}&select=name,name_hi,date,description,is_sample&order=name.asc`,
+  );
+  if (!rows.ok) return failed(c, "Festival");
+  return c.json({
+    data: {
+      date,
+      festivals: rows.rows.map((f) => ({
+        name: f.name,
+        name_hi: f.name_hi,
+        description: f.description ?? "",
+        is_sample: f.is_sample,
+      })),
+    },
+  });
+});
