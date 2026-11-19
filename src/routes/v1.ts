@@ -39,6 +39,7 @@ export const v1Route = new Hono<AppEnv>().get("/", (c) =>
         "GET /api/v1/content/home?lang= (home content bundle: astrologers, poojas, faqs, blocks — D12)",
         "GET /api/v1/settings (engine config from site_settings + public contact/gemstones — Epic 1.9)",
         "POST /api/v1/kundli/match (Ashtakoota 36-guna + Manglik both sides — Epic 4.1/1.8)",
+        "GET /api/v1/calculators/{rashi|sade-sati|kaal-sarp|karakas|ishta-devata|numerology|name-compatibility|flames|love|friendship|lo-shu|vehicle-number|mobile-numerology|name-numerology|age|transits} (Epic 4.4/4.6)",
       ],
     },
   }),

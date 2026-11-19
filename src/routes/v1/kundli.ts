@@ -16,7 +16,9 @@ import {
   ENGINE_VERSION,
   type EngineConfig,
   engineConfigProblems,
+  kaalSarp,
   lagna,
+  manglik,
   navamshaSignIndex,
   planetaryPositions,
   resolveEngineConfig,
@@ -83,6 +85,9 @@ kundliRoute.post("/kundli", async (c) => {
   ) as Record<string, Record<string, number>>;
   divisionals["Lagna"] = divisionalsOf(asc.lon);
   const sadeSatiNow = sadeSati(input, new Date());
+  // Epic 4.4 — Mangal dosha + Kaal Sarp verdicts ride on the same response.
+  const manglikNow = manglik(input);
+  const kaalSarpNow = kaalSarp(grahas, asc.lon);
 
   // Epic 1.9 — echo the resolved engine config for the chart renderer.
   const engineConfig = resolveEngineConfig(body.options).config;
@@ -103,6 +108,8 @@ kundliRoute.post("/kundli", async (c) => {
       navamsha,
       divisionals,
       sade_sati: sadeSatiNow,
+      manglik: manglikNow,
+      kaal_sarp: kaalSarpNow,
       dasha,
       engine_version: ENGINE_VERSION,
     },
