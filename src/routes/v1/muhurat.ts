@@ -47,12 +47,21 @@ muhuratRoute.get("/muhurat/today", async (c) => {
   }
 
   const panchang = computePanchang({ date, latitude: lat, longitude: lng, timezone: tz });
+  // Epic 3.4b — auspicious Choghadiya slots (day + night) join the auspicious
+  // list; inauspicious slots join the avoid list.
+  const choghadiya = [...panchang.choghadiya.day, ...panchang.choghadiya.night];
+  const goodChoghadiya = choghadiya
+    .filter((s) => s.nature === "auspicious")
+    .map((s) => ({ name: `Choghadiya: ${s.name}`, start: s.start, end: s.end, verified: false, source: "Classical Choghadiya lord table — pending Jyotishi review (P11)" }));
+  const badChoghadiya = choghadiya
+    .filter((s) => s.nature === "inauspicious")
+    .map((s) => ({ name: `Choghadiya: ${s.name}`, start: s.start, end: s.end, verified: false, source: "Classical Choghadiya lord table — pending Jyotishi review (P11)" }));
   return c.json({
     data: {
       date: panchang.date,
       timezone: panchang.timezone,
-      auspicious: [panchang.abhijit, panchang.brahma_muhurta],
-      inauspicious: [panchang.rahu_kaal, panchang.yamaganda, panchang.gulika],
+      auspicious: [panchang.abhijit, panchang.brahma_muhurta, ...goodChoghadiya],
+      inauspicious: [panchang.rahu_kaal, panchang.yamaganda, panchang.gulika, ...badChoghadiya],
       vaar: panchang.vaar,
       engine_version: panchang.engine_version,
     },
