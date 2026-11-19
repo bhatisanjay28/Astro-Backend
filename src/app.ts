@@ -5,6 +5,7 @@ import { apiRoute } from "./routes/api";
 import { healthRoute } from "./routes/health";
 import { v1Route } from "./routes/v1";
 import { adminRoute } from "./routes/v1/admin";
+import { authRoute } from "./routes/v1/auth";
 import { blogRoute } from "./routes/v1/blog";
 import { calculatorsRoute } from "./routes/v1/calculators";
 import { citiesRoute } from "./routes/v1/cities";
@@ -49,6 +50,7 @@ app.route("/api/v1", contentRoute);
 app.route("/api/v1", settingsRoute);
 app.route("/api/v1", directoryRoute);
 app.route("/api/v1", requestsRoute);
+app.route("/api/v1", authRoute);
 app.route("/api/v1", blogRoute);
 app.route("/api/v1", adminRoute);
 
