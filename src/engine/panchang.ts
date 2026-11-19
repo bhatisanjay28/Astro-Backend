@@ -50,6 +50,21 @@ export interface Segment {
   source: string;
 }
 
+/** Epic 9.3 (D12): server-side "what the user should see right now". */
+export interface ActiveLimb {
+  window: LimbWindow | null;
+  next: LimbWindow | null;
+}
+
+export interface ActiveLimbs {
+  /** ISO instant the picks were computed against (deterministic traceability). */
+  as_of: string;
+  tithi: ActiveLimb;
+  nakshatra: ActiveLimb;
+  yoga: ActiveLimb;
+  karana: ActiveLimb;
+}
+
 export interface Panchang {
   city?: { slug: string; name: string };
   date: string;
@@ -77,10 +92,12 @@ export interface Panchang {
   samvat: { vikram: number; shaka: number };
   choghadiya: { day: ChoghadiyaSlot[]; night: ChoghadiyaSlot[] };
   hora: { day: HoraSlot[]; night: HoraSlot[] };
+  /** Epic 9.3 (D12) — server-picked current/upcoming limbs (frontend renders, never computes). */
+  active: ActiveLimbs;
   engine_version: string;
 }
 
-export const ENGINE_VERSION = "1.1.0-alpha1";
+export const ENGINE_VERSION = "1.2.0-alpha1";
 
 const DAY_MS = 86400000;
 const DEG_PER_DAY_ELONGATION = 10; // true ≈ 12.2 — keep below for safe search hops
@@ -182,12 +199,43 @@ function limbWindows(
   return out;
 }
 
+/**
+ * Epic 9.3 (D12) — pick the window containing `now` plus the next upcoming
+ * one. Deterministic fallbacks: if `now` sits outside every window (e.g. a
+ * past/future day was queried), current = the last window already started
+ * (or the first window when `now` precedes all), next = the first window
+ * starting after `now`. The frontend NEVER does this picking itself.
+ */
+export function pickActiveLimb(windows: LimbWindow[], now: Date): ActiveLimb {
+  let current: LimbWindow | null = null;
+  let next: LimbWindow | null = null;
+  for (const w of windows) {
+    const start = new Date(w.start).getTime();
+    const end = new Date(w.end).getTime();
+    if (start <= now.getTime() && now.getTime() < end) {
+      current = w;
+    } else if (start > now.getTime() && next === null) {
+      next = w;
+    }
+  }
+  if (current === null) {
+    // last started window (or the earliest window when now precedes all)
+    for (const w of windows) {
+      if (new Date(w.start).getTime() <= now.getTime()) current = w;
+    }
+    current = current ?? windows[0] ?? null;
+  }
+  return { window: current, next };
+}
+
 export function computePanchang(input: {
   date: string; // YYYY-MM-DD
   latitude: number;
   longitude: number;
   timezone: string;
   city?: { slug: string; name: string };
+  /** ISO instant to treat as "now" for active-limb picking (tests / replays). */
+  nowOverride?: string;
 }): Panchang {
   const { date, latitude, longitude, timezone, city } = input;
   const dayStart = zonedStartOfDay(date, timezone);
@@ -288,6 +336,18 @@ export function computePanchang(input: {
   const choghadiya = choghadiyaDay(vaarIndex, sunrise, sunset, nextSunrise);
   const hora = horaDay(vaarIndex, sunrise, sunset, nextSunrise);
 
+  // Epic 9.3 (D12) — active limbs: real "now" when the queried date IS today
+  // in the city timezone; otherwise a deterministic in-day instant (sunrise).
+  const nowInstant =
+    input.nowOverride ?? (isTodayInTz(date, timezone) ? iso(new Date()) : iso(sunrise));
+  const active: ActiveLimbs = {
+    as_of: nowInstant,
+    tithi: pickActiveLimb(tithi, new Date(nowInstant)),
+    nakshatra: pickActiveLimb(nakshatra, new Date(nowInstant)),
+    yoga: pickActiveLimb(yoga, new Date(nowInstant)),
+    karana: pickActiveLimb(karana, new Date(nowInstant)),
+  };
+
   return {
     ...(city ? { city } : {}),
     date,
@@ -309,6 +369,18 @@ export function computePanchang(input: {
     samvat,
     choghadiya,
     hora,
+    active,
     engine_version: ENGINE_VERSION,
   };
+}
+
+/** Is `date` (YYYY-MM-DD) today in `timezone`? */
+function isTodayInTz(date: string, timezone: string): boolean {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return fmt.format(new Date()) === date; // en-CA → YYYY-MM-DD
 }

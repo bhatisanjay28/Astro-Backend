@@ -61,9 +61,12 @@ export {
 export { karanaName, NAKSHATRAS, NAKSHATRAS_HI, TITHIS, YOGAS } from "./names";
 export { ketuMeanLon, rahuMeanLon } from "./nodes";
 export {
+  type ActiveLimb,
+  type ActiveLimbs,
   computePanchang,
   ENGINE_VERSION,
   type LimbWindow,
   type Panchang,
+  pickActiveLimb,
   type Segment,
 } from "./panchang";

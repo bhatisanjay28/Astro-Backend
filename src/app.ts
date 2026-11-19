@@ -4,6 +4,8 @@ import type { AppEnv } from "./env";
 import { apiRoute } from "./routes/api";
 import { healthRoute } from "./routes/health";
 import { v1Route } from "./routes/v1";
+import { citiesRoute } from "./routes/v1/cities";
+import { contentRoute } from "./routes/v1/content";
 import { horoscopeRoute } from "./routes/v1/horoscope";
 import { kundliRoute } from "./routes/v1/kundli";
 import { muhuratRoute } from "./routes/v1/muhurat";
@@ -33,6 +35,8 @@ app.route("/api/v1", muhuratRoute);
 app.route("/api/v1", kundliRoute);
 app.route("/api/v1", horoscopeRoute);
 app.route("/api/v1", newsletterRoute);
+app.route("/api/v1", citiesRoute);
+app.route("/api/v1", contentRoute);
 
 /**
  * Contract v1 (docs/plan/epics.md): success `{ data, meta? }`;
