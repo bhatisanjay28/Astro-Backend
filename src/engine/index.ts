@@ -19,6 +19,13 @@ export {
 } from "./bodies";
 export { moonPhaseName, numerology, rashiAndNakshatra, sunSignTropical } from "./calculators";
 export {
+  type ChoghadiyaNature,
+  type ChoghadiyaSlot,
+  choghadiyaDay,
+  choghadiyaDaySequence,
+  choghadiyaNightSequence,
+} from "./choghadiya";
+export {
   DASHA_ORDER,
   DASHA_YEARS,
   type DashaPeriod,
@@ -27,6 +34,8 @@ export {
   vimshottariFromMoon,
 } from "./dasha";
 export { findWrappedCrossing, nextCrossing } from "./finders";
+export { type HinduMonthInfo, hinduCalendar, type LocalizedName } from "./hinduCalendar";
+export { type HoraNature, type HoraSlot, horaDay } from "./hora";
 export {
   type KundliInput,
   type LagnaPosition,

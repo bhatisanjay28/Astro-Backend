@@ -18,7 +18,10 @@ import {
   sunRiseSet,
   sunSiderealLon,
 } from "./bodies";
+import { type ChoghadiyaSlot, choghadiyaDay } from "./choghadiya";
 import { findWrappedCrossing, nextCrossing } from "./finders";
+import { hinduCalendar, type LocalizedName } from "./hinduCalendar";
+import { type HoraSlot, horaDay } from "./hora";
 import {
   daySegmentTables,
   karanaName,
@@ -64,10 +67,20 @@ export interface Panchang {
   brahma_muhurta: Segment;
   moonrise: string | null;
   moonset: string | null;
+  /** Epic 1.7 — Hindu lunar month (Amanta + Purnimanta) and Samvat years. */
+  hindu_month: {
+    amanta: LocalizedName;
+    purnimanta: LocalizedName;
+    paksha: LocalizedName;
+    adhika: boolean;
+  };
+  samvat: { vikram: number; shaka: number };
+  choghadiya: { day: ChoghadiyaSlot[]; night: ChoghadiyaSlot[] };
+  hora: { day: HoraSlot[]; night: HoraSlot[] };
   engine_version: string;
 }
 
-export const ENGINE_VERSION = "1.0.0-alpha1";
+export const ENGINE_VERSION = "1.1.0-alpha1";
 
 const DAY_MS = 86400000;
 const DEG_PER_DAY_ELONGATION = 10; // true ≈ 12.2 — keep below for safe search hops
@@ -268,6 +281,13 @@ export function computePanchang(input: {
 
   const moon: RiseSet = moonRiseSet(sunrise, latitude, longitude);
 
+  // Epic 1.7 — Hindu month/paksha/Samvat anchored at sunrise; Choghadiya + Hora
+  const tithiAtSunrise = Math.floor((((elongation(sunrise) % 360) + 360) % 360) / 12) % 30;
+  const calendar = hinduCalendar(sunrise, tithiAtSunrise);
+  const { amanta, purnimanta, paksha, adhika, samvat } = calendar;
+  const choghadiya = choghadiyaDay(vaarIndex, sunrise, sunset, nextSunrise);
+  const hora = horaDay(vaarIndex, sunrise, sunset, nextSunrise);
+
   return {
     ...(city ? { city } : {}),
     date,
@@ -285,6 +305,10 @@ export function computePanchang(input: {
     brahma_muhurta: brahma,
     moonrise: moon.rise ? iso(moon.rise) : null,
     moonset: moon.set ? iso(moon.set) : null,
+    hindu_month: { amanta, purnimanta, paksha, adhika },
+    samvat,
+    choghadiya,
+    hora,
     engine_version: ENGINE_VERSION,
   };
 }

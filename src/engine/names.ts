@@ -172,3 +172,37 @@ export function daySegmentTables(vaarIndex: number): {
     gulika: GULIKA_PART[vaarIndex] ?? 7,
   };
 }
+
+/** Lunar (Hindu) months — Amanta & Purnimanta share the name cycle (Epic 1.7). */
+export const LUNAR_MONTHS = [
+  "Chaitra",
+  "Vaisakha",
+  "Jyeshtha",
+  "Ashadha",
+  "Shravana",
+  "Bhadrapada",
+  "Ashwin",
+  "Kartika",
+  "Margashirsha",
+  "Pausha",
+  "Magha",
+  "Phalguna",
+];
+
+export const LUNAR_MONTHS_HI = [
+  "चैत्र",
+  "वैशाख",
+  "ज्येष्ठ",
+  "आषाढ़",
+  "श्रावण",
+  "भाद्रपद",
+  "आश्विन",
+  "कार्तिक",
+  "मार्गशीर्ष",
+  "पौष",
+  "माघ",
+  "फाल्गुन",
+];
+
+export const PAKSHA_NAMES = ["Shukla", "Krishna"] as const;
+export const PAKSHA_NAMES_HI = ["शुक्ल", "कृष्ण"] as const;

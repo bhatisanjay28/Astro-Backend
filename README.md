@@ -30,11 +30,11 @@ bun run typecheck    # tsc --noEmit
 
 ## Endpoints
 
-| Method | Path       | Description |
-|--------|------------|-------------|
-| GET    | `/health`  | Health check (contract envelope `{ data }`) |
-| GET    | `/api`     | API info |
-| GET    | `/api/v1`  | Versioned surface root — contract & planned endpoints |
+| Method | Path      | Description                                           |
+| ------ | --------- | ----------------------------------------------------- |
+| GET    | `/health` | Health check (contract envelope `{ data }`)           |
+| GET    | `/api`    | API info                                              |
+| GET    | `/api/v1` | Versioned surface root — contract & planned endpoints |
 
 Domain routers (`/panchang`, `/kundli`, `/horoscope`, …) mount under `/api/v1` as epics
 land — see the contract in the meta repo: `docs/plan/epics.md` (API & data contracts v1).

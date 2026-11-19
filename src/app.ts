@@ -4,8 +4,10 @@ import type { AppEnv } from "./env";
 import { apiRoute } from "./routes/api";
 import { healthRoute } from "./routes/health";
 import { v1Route } from "./routes/v1";
+import { horoscopeRoute } from "./routes/v1/horoscope";
 import { kundliRoute } from "./routes/v1/kundli";
 import { muhuratRoute } from "./routes/v1/muhurat";
+import { newsletterRoute } from "./routes/v1/newsletter";
 import { panchangRoute } from "./routes/v1/panchang";
 
 const app = new Hono<AppEnv>();
@@ -29,6 +31,8 @@ app.route("/api/v1", v1Route);
 app.route("/api/v1", panchangRoute);
 app.route("/api/v1", muhuratRoute);
 app.route("/api/v1", kundliRoute);
+app.route("/api/v1", horoscopeRoute);
+app.route("/api/v1", newsletterRoute);
 
 /**
  * Contract v1 (docs/plan/epics.md): success `{ data, meta? }`;

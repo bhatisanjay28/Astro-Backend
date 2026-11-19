@@ -32,7 +32,9 @@ export const v1Route = new Hono<AppEnv>().get("/", (c) =>
         "*    /api/v1/admin/* (auth: admin/editor)",
       ],
       implemented: [
-        "GET /api/v1/panchang (coords mode; city mode activates with service credentials)",
+        "GET /api/v1/panchang (coords + city mode; incl. Hindu month/Samvat, Choghadiya, Hora)",
+        "GET /api/v1/horoscope?period=&lang=&sign= (12-sign rashiphal from horoscopes table)",
+        "POST /api/v1/newsletter { email, source } (public subscribe/upsert)",
       ],
     },
   }),
