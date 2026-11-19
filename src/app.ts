@@ -7,12 +7,14 @@ import { v1Route } from "./routes/v1";
 import { calculatorsRoute } from "./routes/v1/calculators";
 import { citiesRoute } from "./routes/v1/cities";
 import { contentRoute } from "./routes/v1/content";
+import { directoryRoute } from "./routes/v1/directory";
 import { horoscopeRoute } from "./routes/v1/horoscope";
 import { kundliRoute } from "./routes/v1/kundli";
 import { matchRoute } from "./routes/v1/match";
 import { muhuratRoute } from "./routes/v1/muhurat";
 import { newsletterRoute } from "./routes/v1/newsletter";
 import { panchangRoute } from "./routes/v1/panchang";
+import { requestsRoute } from "./routes/v1/requests";
 import { settingsRoute } from "./routes/v1/settings";
 
 const app = new Hono<AppEnv>();
@@ -43,6 +45,8 @@ app.route("/api/v1", newsletterRoute);
 app.route("/api/v1", citiesRoute);
 app.route("/api/v1", contentRoute);
 app.route("/api/v1", settingsRoute);
+app.route("/api/v1", directoryRoute);
+app.route("/api/v1", requestsRoute);
 
 /**
  * Contract v1 (docs/plan/epics.md): success `{ data, meta? }`;
