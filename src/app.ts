@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { AppEnv } from "./env";
+import { rateLimitExceeded } from "./lib/rate-limit";
 import { apiRoute } from "./routes/api";
 import { healthRoute } from "./routes/health";
 import { v1Route } from "./routes/v1";
@@ -45,6 +46,22 @@ app.use("/api/*", async (c, next) => {
   c.header("X-Content-Type-Options", "nosniff");
   c.header("X-Frame-Options", "DENY");
   c.header("Referrer-Policy", "strict-origin-when-cross-origin");
+});
+
+/**
+ * Best-effort rate limiting on abuse-prone POST endpoints (Epic 7.2):
+ * login brute-force, newsletter and booking-request spam. Per-isolate in
+ * Workers; volumetric defence stays with Cloudflare WAF (owner keys).
+ */
+app.use("/api/*", async (c, next) => {
+  const ip = c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for") ?? "unknown";
+  if (rateLimitExceeded(c.req.path, ip, (c.env ?? {}) as Record<string, unknown>)) {
+    return c.json(
+      { error: { code: "rate_limited", message: "Too many requests — try again in a minute." } },
+      429,
+    );
+  }
+  await next();
 });
 
 app.route("/", healthRoute);
