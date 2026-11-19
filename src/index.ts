@@ -12,6 +12,16 @@ export default app;
  */
 if (typeof Bun !== "undefined") {
   const port = Number(process.env.PORT ?? 3000);
-  const server = Bun.serve({ port, fetch: app.fetch });
+  // Workers receive bindings via c.env; in local Bun dev, supply process.env so
+  // routes that need SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY can reach Supabase.
+  const execCtx = {
+    waitUntil: () => {},
+    passThroughOnException: () => {},
+    props: {},
+  };
+  const server = Bun.serve({
+    port,
+    fetch: (req) => app.fetch(req, process.env as unknown as Record<string, string>, execCtx),
+  });
   console.log(`astro-backend dev server → http://localhost:${server.port}`);
 }

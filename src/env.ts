@@ -20,3 +20,9 @@ export type AppEnv = {
   Bindings: Bindings;
   Variables: Record<string, never>;
 };
+
+/** Env shape for routes that set admin context (Epic 6.1 requireAdmin). */
+export type AppEnvWithAdmin = {
+  Bindings: Bindings;
+  Variables: { admin: import("./lib/admin-auth").AdminContext };
+};
