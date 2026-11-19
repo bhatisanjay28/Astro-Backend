@@ -52,10 +52,22 @@ muhuratRoute.get("/muhurat/today", async (c) => {
   const choghadiya = [...panchang.choghadiya.day, ...panchang.choghadiya.night];
   const goodChoghadiya = choghadiya
     .filter((s) => s.nature === "auspicious")
-    .map((s) => ({ name: `Choghadiya: ${s.name}`, start: s.start, end: s.end, verified: false, source: "Classical Choghadiya lord table — pending Jyotishi review (P11)" }));
+    .map((s) => ({
+      name: `Choghadiya: ${s.name}`,
+      start: s.start,
+      end: s.end,
+      verified: false,
+      source: "Classical Choghadiya lord table — pending Jyotishi review (P11)",
+    }));
   const badChoghadiya = choghadiya
     .filter((s) => s.nature === "inauspicious")
-    .map((s) => ({ name: `Choghadiya: ${s.name}`, start: s.start, end: s.end, verified: false, source: "Classical Choghadiya lord table — pending Jyotishi review (P11)" }));
+    .map((s) => ({
+      name: `Choghadiya: ${s.name}`,
+      start: s.start,
+      end: s.end,
+      verified: false,
+      source: "Classical Choghadiya lord table — pending Jyotishi review (P11)",
+    }));
   return c.json({
     data: {
       date: panchang.date,
