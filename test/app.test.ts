@@ -76,6 +76,23 @@ describe("CORS", () => {
     const res = await app.request("/api/v1", { headers: { Origin: "https://evil.example" } });
     expect(res.headers.get("access-control-allow-origin")).toBeNull();
   });
+
+  it("locks out local dev origins when ALLOW_LOCALHOST_CORS=false", async () => {
+    // BUG-10 regression: the localhost allowance is an explicit, auditable
+    // opt-out — production can set ALLOW_LOCALHOST_CORS=false.
+    const res = await app.request(
+      "/api/v1",
+      { headers: { Origin: "http://127.0.0.1:4321" } },
+      { ALLOW_LOCALHOST_CORS: "false" },
+    );
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+    const prod = await app.request(
+      "/api/v1",
+      { headers: { Origin: "https://vyotish.com" } },
+      { ALLOW_LOCALHOST_CORS: "false" },
+    );
+    expect(prod.headers.get("access-control-allow-origin")).toBe("https://vyotish.com");
+  });
 });
 
 describe("unknown top-level route", () => {

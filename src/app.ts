@@ -25,17 +25,28 @@ import { settingsRoute } from "./routes/v1/settings";
 const app = new Hono<AppEnv>();
 
 /**
- * CORS: origin allowlist (PRD §14). Production origins + local dev ports.
- * GET endpoints are public data; POST /api/v1/kundli is stateless and no-PII,
- * so no credentials are ever exchanged cross-origin.
+ * CORS: origin allowlist (PRD §14). Production origins always; local dev
+ * ports (localhost/127.0.0.1) stay allowed by default because the frontend
+ * is developed against the live API (PUBLIC_API_BASE_URL), but can be
+ * locked out by setting ALLOW_LOCALHOST_CORS=false in the deployment env.
+ * GET endpoints are public data; POST /api/v1/kundli is stateless and
+ * no-PII, so no credentials are ever exchanged cross-origin.
  */
-const ALLOWED_ORIGIN_PATTERN =
-  /^https:\/\/(vyotish\.com|www\.vyotish\.com|.*\.vyotish\.workers\.dev)$|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+const PROD_ORIGIN_PATTERN =
+  /^https:\/\/(vyotish\.com|www\.vyotish\.com|.*\.vyotish\.workers\.dev)$/;
+const LOCAL_ORIGIN_PATTERN = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
-app.use(
-  "/api/*",
-  cors({ origin: (origin) => (ALLOWED_ORIGIN_PATTERN.test(origin) ? origin : null) }),
-);
+const allowedOrigin = (origin: string, allowLocalDev: boolean): boolean =>
+  PROD_ORIGIN_PATTERN.test(origin) || (allowLocalDev && LOCAL_ORIGIN_PATTERN.test(origin));
+
+app.use("/api/*", async (c, next) => {
+  const allowLocalDev =
+    (c.env as Record<string, unknown> | undefined)?.ALLOW_LOCALHOST_CORS !== "false";
+  return cors({ origin: (origin) => (allowedOrigin(origin, allowLocalDev) ? origin : null) })(
+    c,
+    next,
+  );
+});
 
 /**
  * Security headers on every API response (Epic 7.2, PRD §14). The API never
