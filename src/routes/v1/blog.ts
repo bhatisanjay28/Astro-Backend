@@ -11,7 +11,7 @@
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../env";
-import { rest, type SupabaseCreds, supabaseCreds } from "../../lib/supabase";
+import { rest, restList, type SupabaseCreds, supabaseCreds } from "../../lib/supabase";
 
 type Env = AppEnv;
 
@@ -89,15 +89,14 @@ blogRoute.get("/blog/posts", async (c) => {
     params.set("id", `in.(${ids.join(",")})`);
   }
 
-  const res = await rest(creds, `blog_posts?${params.toString()}`, {
-    headers: { Prefer: "count=exact" },
-  });
-  if (!res.ok) {
+  const listing = await restList(creds, `blog_posts?${params.toString()}`);
+  if (!listing.ok) {
     return c.json({ error: { code: "internal_error", message: "Blog listing failed" } }, 500);
   }
-  const total = Number(res.headers.get("content-range")?.split("/")[1] ?? 0);
-  const posts = (await res.json()) as Record<string, unknown>[];
-  return c.json({ data: { posts }, meta: { page, per_page: perPage, total } });
+  return c.json({
+    data: { posts: listing.rows },
+    meta: { page, per_page: perPage, total: listing.total },
+  });
 });
 
 blogRoute.get("/blog/posts/:slug", async (c) => {

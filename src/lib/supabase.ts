@@ -36,6 +36,34 @@ export function rest(
   });
 }
 
+export type RestListResult =
+  | { ok: true; rows: Record<string, unknown>[]; total: number }
+  | { ok: false; status: number };
+
+/**
+ * Paginated PostgREST read with `Prefer: count=exact`.
+ *
+ * PostgREST answers 416 PGRST103 when the requested offset is past the row
+ * count (e.g. `?page=2` on a 2-row table). That is an empty page, not a
+ * failure — the exact total still arrives in the `content-range` suffix
+ * after the slash, so it is parsed here and reported normally. Anything
+ * else non-OK (network, auth, 5xx) comes back as `{ ok: false }` for the
+ * caller to map to its own 500.
+ */
+export async function restList(creds: SupabaseCreds, resource: string): Promise<RestListResult> {
+  const res = await rest(creds, resource, { headers: { Prefer: "count=exact" } });
+  if (res.status === 416)
+    return {
+      ok: true,
+      rows: [],
+      total: Number(res.headers.get("content-range")?.split("/")[1] ?? 0),
+    };
+  if (!res.ok) return { ok: false, status: res.status };
+  const rows = (await res.json()) as Record<string, unknown>[];
+  const total = Number(res.headers.get("content-range")?.split("/")[1] ?? rows.length);
+  return { ok: true, rows, total };
+}
+
 /** Supabase Storage call (upload/bucket endpoints, not PostgREST). */
 export function storage(
   creds: SupabaseCreds,

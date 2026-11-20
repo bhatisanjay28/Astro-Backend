@@ -6,7 +6,7 @@
  */
 import { Hono } from "hono";
 import type { AppEnvWithAdmin } from "../../../env";
-import { rest, supabaseCreds } from "../../../lib/supabase";
+import { rest, restList, supabaseCreds } from "../../../lib/supabase";
 
 type Env = AppEnvWithAdmin;
 
@@ -63,15 +63,12 @@ adminHoroscopesRoute.get("/admin/horoscopes", async (c) => {
   if (q.period && PERIODS.includes(q.period)) params.set("period", `eq.${q.period}`);
   if (q.lang && ["en", "hi"].includes(q.lang)) params.set("lang", `eq.${q.lang}`);
   if (q.status && ["draft", "published"].includes(q.status)) params.set("status", `eq.${q.status}`);
-  const res = await rest(creds, `horoscopes?${params.toString()}`, {
-    headers: { Prefer: "count=exact" },
-  });
-  if (!res.ok)
+  const listing = await restList(creds, `horoscopes?${params.toString()}`);
+  if (!listing.ok)
     return c.json({ error: { code: "internal_error", message: "Horoscope listing failed" } }, 500);
-  const total = Number(res.headers.get("content-range")?.split("/")[1] ?? 0);
   return c.json({
-    data: { horoscopes: await res.json() },
-    meta: { page, per_page: perPage, total },
+    data: { horoscopes: listing.rows },
+    meta: { page, per_page: perPage, total: listing.total },
   });
 });
 

@@ -7,7 +7,7 @@
  */
 import { Hono } from "hono";
 import type { AppEnvWithAdmin } from "../../../env";
-import { rest, supabaseCreds } from "../../../lib/supabase";
+import { rest, restList, supabaseCreds } from "../../../lib/supabase";
 
 type Env = AppEnvWithAdmin;
 
@@ -56,15 +56,12 @@ adminInboxRoute.get("/admin/requests", async (c) => {
   });
   const status = c.req.query().status ?? "";
   if (REQUEST_STATUSES.includes(status)) params.set("status", `eq.${status}`);
-  const res = await rest(creds, `${table}?${params.toString()}`, {
-    headers: { Prefer: "count=exact" },
-  });
-  if (!res.ok)
+  const listing = await restList(creds, `${table}?${params.toString()}`);
+  if (!listing.ok)
     return c.json({ error: { code: "internal_error", message: "Request listing failed" } }, 500);
-  const total = Number(res.headers.get("content-range")?.split("/")[1] ?? 0);
   return c.json({
-    data: { type, requests: await res.json() },
-    meta: { page, per_page: perPage, total },
+    data: { type, requests: listing.rows },
+    meta: { page, per_page: perPage, total: listing.total },
   });
 });
 
@@ -110,13 +107,13 @@ adminInboxRoute.get("/admin/messages", async (c) => {
   });
   const status = c.req.query().status ?? "";
   if (MESSAGE_STATUSES.includes(status)) params.set("status", `eq.${status}`);
-  const res = await rest(creds, `contact_messages?${params.toString()}`, {
-    headers: { Prefer: "count=exact" },
-  });
-  if (!res.ok)
+  const listing = await restList(creds, `contact_messages?${params.toString()}`);
+  if (!listing.ok)
     return c.json({ error: { code: "internal_error", message: "Message listing failed" } }, 500);
-  const total = Number(res.headers.get("content-range")?.split("/")[1] ?? 0);
-  return c.json({ data: { messages: await res.json() }, meta: { page, per_page: perPage, total } });
+  return c.json({
+    data: { messages: listing.rows },
+    meta: { page, per_page: perPage, total: listing.total },
+  });
 });
 
 adminInboxRoute.patch("/admin/messages/:id", async (c) => {

@@ -102,6 +102,28 @@ describe("GET /api/v1/blog/posts", () => {
     expect(body.meta.total).toBe(0);
   });
 
+  it("returns an empty page (not 500) when the offset is past the row count", async () => {
+    // PostgREST answers 416 PGRST103 for ?page=2 on a 2-row table; the total
+    // still arrives in content-range. BUG-02 regression: this used to 500.
+    mockSupabase((url) => {
+      if (url.includes("/rest/v1/blog_posts?")) {
+        return json({ code: "PGRST103", message: "Requested range not satisfiable" }, 416, {
+          "content-range": "*/2",
+        });
+      }
+      return json([]);
+    });
+    const res = await app.request("/api/v1/blog/posts?page=2", {}, BINDINGS);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      data: { posts: unknown[] };
+      meta: { page: number; total: number };
+    };
+    expect(body.data.posts).toEqual([]);
+    expect(body.meta.page).toBe(2);
+    expect(body.meta.total).toBe(2);
+  });
+
   it("503s without backend credentials", async () => {
     const res = await app.request("/api/v1/blog/posts", {});
     expect(res.status).toBe(503);

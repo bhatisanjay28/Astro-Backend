@@ -277,6 +277,32 @@ describe("admin inboxes (requests + messages)", () => {
     expect(body.meta.total).toBe(1);
   });
 
+  it("lists an empty page (not 500) when pagination offset is past the row count", async () => {
+    // PostgREST answers 416 PGRST103 for ?page=2 on a 1-row table. BUG-02
+    // regression: admin listings used to map that to a 500.
+    mockSupabase((url) => {
+      if (url.includes("/rest/v1/consultation_requests?")) {
+        return json({ code: "PGRST103", message: "Requested range not satisfiable" }, 416, {
+          "content-range": "*/1",
+        });
+      }
+      return identityOk(url);
+    });
+    const res = await app.request(
+      "/api/v1/admin/requests?type=consultation&page=2",
+      authed(),
+      BINDINGS,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      data: { requests: unknown[] };
+      meta: { page: number; total: number };
+    };
+    expect(body.data.requests).toEqual([]);
+    expect(body.meta.page).toBe(2);
+    expect(body.meta.total).toBe(1);
+  });
+
   it("rejects a bogus request status", async () => {
     mockSupabase(identityOk);
     const res = await app.request(
