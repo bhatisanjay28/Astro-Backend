@@ -38,6 +38,60 @@ async function restGet<T>(
 
 export const contentRoute = new Hono<AppEnv>();
 
+// ---------------------------------------------------------------------------
+// GET /api/v1/content/blocks?lang=en&prefix=kundli. — keyed published content
+// blocks by block_key prefix (Epic 4.2b: admin-authored kundli interpretation
+// notes; usable for any future keyed-block surface). Same block store as
+// /content/home — a prefix-scoped read so pages don't pull the whole bundle.
+// ---------------------------------------------------------------------------
+
+const PREFIX_RE = /^[a-z0-9_-]{1,60}\.$/; // must end with a dot → unambiguous prefix
+
+contentRoute.get("/content/blocks", async (c) => {
+  const lang = c.req.query("lang") ?? "en";
+  if (!["en", "hi"].includes(lang)) {
+    return badRequest(c, "lang must be en or hi", { received: lang });
+  }
+  const prefix = c.req.query("prefix") ?? "";
+  if (!PREFIX_RE.test(prefix)) {
+    return badRequest(c, "prefix must be 1–60 chars of a-z 0-9 _ - ending with a dot", {
+      received: prefix,
+    });
+  }
+
+  const supabaseUrl = c.env?.SUPABASE_URL;
+  const serviceKey = c.env?.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceKey) {
+    return c.json(
+      {
+        error: {
+          code: "service_unavailable",
+          message:
+            "Content blocks require backend database credentials, which are not configured on this deployment yet.",
+        },
+      },
+      503,
+    );
+  }
+
+  const rows = await restGet<{ block_key: string; payload: unknown; is_sample: boolean }>(
+    supabaseUrl,
+    serviceKey,
+    `content_blocks?block_key=like.${encodeURIComponent(prefix)}*&lang=eq.${lang}&status=eq.published&order=block_key.asc&select=block_key,payload,is_sample`,
+  );
+  if (!rows.ok) {
+    return c.json({ error: { code: "internal_error", message: "Content lookup failed" } }, 500);
+  }
+
+  const blocks: Record<string, unknown> = {};
+  let sample = false;
+  for (const b of rows.rows) {
+    blocks[b.block_key] = b.payload;
+    sample = sample || b.is_sample;
+  }
+  return c.json({ data: { lang, prefix, blocks, is_sample: sample } });
+});
+
 contentRoute.get("/content/home", async (c) => {
   const q = c.req.query();
   const lang = q.lang ?? "en";

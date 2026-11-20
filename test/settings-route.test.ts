@@ -61,6 +61,26 @@ describe("GET /api/v1/settings", () => {
     expect(json.data.contact_whatsapp).toBeNull(); // empty string → unset
   });
 
+  it("passes offers_config through as JSON (Epic 5.2) or null when unset", async () => {
+    mockSupabase(() => [
+      {
+        key: "public.offers_config",
+        value: [{ text: "First consult free", audience: "consultation" }],
+      },
+    ]);
+    const res = await app.request("/api/v1/settings", {}, BINDINGS);
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { data: { offers_config: unknown } };
+    expect(json.data.offers_config).toEqual([
+      { text: "First consult free", audience: "consultation" },
+    ]);
+
+    mockSupabase(() => []);
+    const unset = await app.request("/api/v1/settings", {}, BINDINGS);
+    const unsetBody = (await unset.json()) as { data: { offers_config: unknown } };
+    expect(unsetBody.data.offers_config).toBeNull();
+  });
+
   it("degrades invalid/missing engine values to defaults with source map", async () => {
     mockSupabase(() => [{ key: "public.engine_ayanamsha", value: "not-a-thing" }]);
     const res = await app.request("/api/v1/settings", {}, BINDINGS);

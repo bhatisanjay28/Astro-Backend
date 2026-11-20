@@ -11,6 +11,7 @@
 import { Hono } from "hono";
 import type { AppEnvWithAdmin } from "../../env";
 import { requireAdmin } from "../../lib/admin-auth";
+import { adminBlocksRoute } from "./admin/blocks";
 import { adminCatalogRoute } from "./admin/catalog";
 import { adminHoroscopesRoute } from "./admin/horoscopes";
 import { adminInboxRoute } from "./admin/inbox";
@@ -24,6 +25,7 @@ export const adminRoute = new Hono<AppEnvWithAdmin>();
 adminRoute.use("/admin/*", requireAdmin());
 
 adminRoute.route("/", adminPostsRoute);
+adminRoute.route("/", adminBlocksRoute);
 adminRoute.route("/", adminTaxonomyRoute);
 adminRoute.route("/", adminMediaRoute);
 adminRoute.route("/", adminCatalogRoute);

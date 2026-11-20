@@ -29,6 +29,7 @@ const EXTRA_KEYS = [
   "public.gemstones_site_url",
   "public.contact_email",
   "public.contact_whatsapp",
+  "public.offers_config",
 ] as const;
 
 settingsRoute.get("/settings", async (c) => {
@@ -90,6 +91,12 @@ settingsRoute.get("/settings", async (c) => {
       gemstones_site_url: decodeString("public.gemstones_site_url"),
       contact_email: decodeString("public.contact_email"),
       contact_whatsapp: decodeString("public.contact_whatsapp"),
+      // Epic 5.2 — offers banner config (admin-authored JSON; shape contract
+      // lives in the frontend renderer: [{text, href?, audience?}]). Passed
+      // through unvalidated here; the renderer fail-softs on anything else.
+      offers_config: dbByKey.has("public.offers_config")
+        ? (dbByKey.get("public.offers_config") ?? null)
+        : null,
     },
     meta: {
       defaults: DEFAULT_ENGINE_CONFIG,
