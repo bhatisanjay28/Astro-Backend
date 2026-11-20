@@ -3,9 +3,12 @@ import app from "../src/app";
 
 /**
  * Route tests for the birthplace pickers (owner directive, 2026-11-20):
- *  - autocomplete falls back to the cities table without a Google key;
+ *  - autocomplete falls back to the GeoNames-seeded cities table (worldwide
+ *    coverage, population-ranked) without a Google key;
  *  - with GOOGLE_PLACES_API_KEY it proxies Places (New) — key stays server-side;
- *  - resolve handles both city:{slug} and Google place ids (Details + Time Zone).
+ *  - resolve handles city:{slug} and Google place ids (cache-first: a stored
+ *    place answers without upstream calls), persists every resolution to the
+ *    `places` store, and returns structured {main, admin1, country}.
  * Upstream responses are mocked; the live Google path is verified post-key.
  */
 
@@ -25,6 +28,36 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
+/** Minimal Supabase-side mock: cities search + places store GET/POST. */
+function supabaseMock(handlers: {
+  cities?: unknown;
+  placesGet?: unknown;
+  assertCitiesUrl?: (url: string) => void;
+  assertPlacesPost?: (body: unknown) => void;
+}) {
+  return mock(async (input: unknown, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/rest/v1/cities?")) {
+      handlers.assertCitiesUrl?.(url);
+      return new Response(JSON.stringify(handlers.cities ?? []), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.includes("/rest/v1/places?") && (init?.method ?? "GET") === "GET") {
+      return new Response(JSON.stringify(handlers.placesGet ?? []), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.includes("/rest/v1/places?") && init?.method === "POST") {
+      handlers.assertPlacesPost?.(JSON.parse(String(init.body)));
+      return new Response(null, { status: 201 });
+    }
+    return new Response("{}", { status: 500 });
+  }) as unknown as typeof fetch;
+}
+
 describe("GET /api/v1/places/autocomplete", () => {
   it("returns an empty list for very short queries", async () => {
     const res = await app.request("/api/v1/places/autocomplete?q=j", {}, BINDINGS);
@@ -42,27 +75,33 @@ describe("GET /api/v1/places/autocomplete", () => {
     expect(res.status).toBe(400);
   });
 
-  it("falls back to the cities table without a Google key", async () => {
-    globalThis.fetch = mock(async (input: unknown) => {
-      const url = String(input);
-      expect(url).toContain("/rest/v1/cities?");
-      expect(url).toContain("ilike");
-      return new Response(
-        JSON.stringify([
-          { slug: "jaipur", name: "Jaipur", admin1: "Rajasthan", country_code: "IN" },
-        ]),
-        { status: 200, headers: { "content-type": "application/json" } },
-      );
-    }) as unknown as typeof fetch;
-    const res = await app.request("/api/v1/places/autocomplete?q=jai", {}, BINDINGS);
+  it("falls back to the cities table: name+alternates search, population-ranked", async () => {
+    let sawUrl = "";
+    globalThis.fetch = supabaseMock({
+      cities: [
+        {
+          slug: "sirohi-rajasthan",
+          name: "Sirohi",
+          admin1: "Rajasthan",
+          country: "India",
+          country_code: "IN",
+        },
+      ],
+      assertCitiesUrl: (url) => {
+        sawUrl = url;
+      },
+    });
+    const res = await app.request("/api/v1/places/autocomplete?q=sirohi", {}, BINDINGS);
     expect(res.status).toBe(200);
+    expect(sawUrl).toContain("search_names.ilike");
+    expect(sawUrl).toContain("population.desc.nullslast");
     const body = (await res.json()) as {
       data: { suggestions: Array<{ place_id: string; label: string }> };
       meta: { source: string };
     };
     expect(body.meta.source).toBe("cities");
-    expect(body.data.suggestions[0]?.place_id).toBe("city:jaipur");
-    expect(body.data.suggestions[0]?.label).toBe("Jaipur, Rajasthan, IN");
+    expect(body.data.suggestions[0]?.place_id).toBe("city:sirohi-rajasthan");
+    expect(body.data.suggestions[0]?.label).toBe("Sirohi, Rajasthan, India");
   });
 
   it("proxies Places (New) when the key is set — key never leaves the server", async () => {
@@ -113,41 +152,104 @@ describe("GET /api/v1/places/resolve", () => {
     expect(res.status).toBe(400);
   });
 
-  it("resolves city:{slug} from the cities table", async () => {
-    globalThis.fetch = mock(
-      async () =>
-        new Response(
-          JSON.stringify([
-            {
-              name: "Jaipur",
-              admin1: "Rajasthan",
-              country_code: "IN",
-              latitude: 26.9124,
-              longitude: 75.7873,
-              timezone: "Asia/Kolkata",
-            },
-          ]),
-          { status: 200, headers: { "content-type": "application/json" } },
-        ),
-    ) as unknown as typeof fetch;
-    const res = await app.request("/api/v1/places/resolve?place_id=city:jaipur", {}, BINDINGS);
+  it("resolves city:{slug} with structured parts and stores it", async () => {
+    let stored: Record<string, unknown> | undefined;
+    globalThis.fetch = supabaseMock({
+      cities: [
+        {
+          name: "Sirohi",
+          admin1: "Rajasthan",
+          country: "India",
+          country_code: "IN",
+          latitude: 24.885,
+          longitude: 72.8621,
+          timezone: "Asia/Kolkata",
+        },
+      ],
+      assertPlacesPost: (body) => {
+        stored = body as Record<string, unknown>;
+      },
+    });
+    const res = await app.request(
+      "/api/v1/places/resolve?place_id=city:sirohi-rajasthan",
+      {},
+      BINDINGS,
+    );
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      data: { lat: number; lng: number; tz: string; label: string };
+      data: {
+        place_id: string;
+        lat: number;
+        lng: number;
+        tz: string;
+        label: string;
+        structured: {
+          main: string;
+          admin1: string | null;
+          country: string | null;
+          country_code: string | null;
+        };
+      };
     };
-    expect(body.data.lat).toBeCloseTo(26.9124);
+    expect(body.data.lat).toBeCloseTo(24.885);
     expect(body.data.tz).toBe("Asia/Kolkata");
-    expect(body.data.label).toContain("Jaipur");
+    expect(body.data.label).toBe("Sirohi, Rajasthan, India");
+    expect(body.data.structured).toEqual({
+      main: "Sirohi",
+      admin1: "Rajasthan",
+      country: "India",
+      country_code: "IN",
+    });
+    expect(stored?.source).toBe("cities");
+    expect(stored?.place_id).toBe("city:sirohi-rajasthan");
   });
 
-  it("resolves a Google place id via Details + Time Zone", async () => {
-    globalThis.fetch = mock(async (input: unknown) => {
+  it("serves a Google place id from the places store without upstream calls", async () => {
+    globalThis.fetch = supabaseMock({
+      placesGet: [
+        {
+          name: "Udaipur",
+          admin1: "Rajasthan",
+          country: "India",
+          country_code: "IN",
+          latitude: 24.5854,
+          longitude: 73.7125,
+          timezone: "Asia/Kolkata",
+          label: "Udaipur, Rajasthan, India",
+        },
+      ],
+    });
+    const res = await app.request(
+      "/api/v1/places/resolve?place_id=ChIJcached999",
+      {},
+      KEY_BINDINGS,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { place_id: string; structured: { main: string } } };
+    expect(body.data.place_id).toBe("ChIJcached999");
+    expect(body.data.structured.main).toBe("Udaipur");
+  });
+
+  it("resolves a Google place id via Details + Time Zone, stores structured", async () => {
+    let stored: Record<string, unknown> | undefined;
+    globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
       const url = String(input);
+      if (url.includes("/rest/v1/places?")) {
+        if ((init?.method ?? "GET") === "GET")
+          return new Response(JSON.stringify([]), { status: 200 });
+        stored = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(null, { status: 201 });
+      }
       if (url.startsWith("https://places.googleapis.com/v1/places/ChIJtest123")) {
         return new Response(
           JSON.stringify({
             location: { latitude: 26.9124, longitude: 75.7873 },
             formattedAddress: "Jaipur, Rajasthan, India",
+            addressComponents: [
+              { longText: "Jaipur", shortText: "Jaipur", types: ["locality"] },
+              { longText: "Rajasthan", shortText: "RJ", types: ["administrative_area_level_1"] },
+              { longText: "India", shortText: "IN", types: ["country"] },
+            ],
           }),
           { status: 200, headers: { "content-type": "application/json" } },
         );
@@ -162,12 +264,20 @@ describe("GET /api/v1/places/resolve", () => {
     }) as unknown as typeof fetch;
     const res = await app.request("/api/v1/places/resolve?place_id=ChIJtest123", {}, KEY_BINDINGS);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { data: { tz: string; label: string } };
+    const body = (await res.json()) as {
+      data: { tz: string; label: string; structured: { main: string; country: string | null } };
+    };
     expect(body.data.tz).toBe("Asia/Kolkata");
     expect(body.data.label).toBe("Jaipur, Rajasthan, India");
+    expect(body.data.structured.main).toBe("Jaipur");
+    expect(body.data.structured.country).toBe("India");
+    expect(stored?.source).toBe("google");
+    expect(stored?.timezone).toBe("Asia/Kolkata");
   });
 
-  it("503s on a Google place id without a configured key", async () => {
+  it("503s on an uncached Google place id without a configured key", async () => {
+    // explicit cache-miss mock: full-suite runs share fetch state across files
+    globalThis.fetch = supabaseMock({ placesGet: [] });
     const res = await app.request("/api/v1/places/resolve?place_id=ChIJtest123", {}, BINDINGS);
     expect(res.status).toBe(503);
     const body = (await res.json()) as { error: { code: string } };
