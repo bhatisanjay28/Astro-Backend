@@ -24,6 +24,7 @@ import {
   manglik,
   mobileNumerology,
   nameNumerology,
+  numberCompatibility,
   planetaryPositions,
   rahuMeanLon,
   rahuSiderealLon,
@@ -380,5 +381,31 @@ describe("age extras (QF-15)", () => {
     ]).toContain(a.day_of_week);
     expect(a.next_birthday.days_until).toBeGreaterThanOrEqual(0);
     expect(a.next_birthday.days_until).toBeLessThanOrEqual(366);
+  });
+});
+
+describe("numberCompatibility (S14-2 name-numerology owner date)", () => {
+  // 1990-06-15 → mulank 6 (row: friends [4,5,8], enemies [1,3]), bhagyank 4
+  // (row: friends [5,6,8], enemies [1,2,9]).
+  test("both-friendly → Supportive", () => {
+    const r = numberCompatibility(5, "1990-06-15"); // name root 5 ("Poonam")
+    expect(r.owner_mulank).toBe(6);
+    expect(r.owner_bhagyank).toBe(4);
+    expect(r.relation_to_mulank).toBe("friendly");
+    expect(r.relation_to_bhagyank).toBe("friendly");
+    expect(r.verdict).toBe("Supportive");
+  });
+
+  test("any enemy relation → Challenging", () => {
+    const r = numberCompatibility(1, "1990-06-15"); // 1 is an enemy of row 6
+    expect(r.relation_to_mulank).toBe("enemy");
+    expect(r.verdict).toBe("Challenging");
+  });
+
+  test("numbers absent from a row read as neutral", () => {
+    const r = numberCompatibility(7, "1990-06-15"); // 7 not listed in rows 6/4
+    expect(r.relation_to_mulank).toBe("neutral");
+    expect(r.relation_to_bhagyank).toBe("neutral");
+    expect(r.verdict).toBe("Neutral");
   });
 });

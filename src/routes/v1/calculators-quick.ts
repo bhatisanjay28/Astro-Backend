@@ -19,6 +19,7 @@ import {
   mobileNumerology,
   nameCompatibility,
   nameNumerology,
+  numberCompatibility,
   vehicleLuckyNumber,
   vehiclePlateAnalyser,
 } from "../../engine";
@@ -164,14 +165,24 @@ calculatorsQuickRoute.get("/calculators/mobile-numerology", (c) => {
   });
 });
 
-/** GET /calculators/name-numerology?name= — Chaldean reading with letter values. */
+/** GET /calculators/name-numerology?name=[&date=] — Chaldean reading with
+ *  letter values; optional owner date adds root-vs-owner compatibility. */
 calculatorsQuickRoute.get("/calculators/name-numerology", (c) => {
   const name = requireName(c);
   if (!name) return badRequest(c, "name must be 1–60 letters (spaces/hyphens allowed)");
   const result = nameNumerology(name);
+  const dateParam = c.req.query("date");
+  let ownerCompatibility: ReturnType<typeof numberCompatibility> | null = null;
+  if (dateParam) {
+    if (!DATE_Q_RE.test(dateParam) || !isCalendarDate(dateParam)) {
+      return badRequest(c, "date must be a valid YYYY-MM-DD calendar date");
+    }
+    ownerCompatibility = numberCompatibility(result.root, dateParam);
+  }
   return c.json({
     data: {
       ...result,
+      owner_compatibility: ownerCompatibility,
       interpretation: interpretRoot(result.root, "Name root"),
       engine_version: ENGINE_VERSION,
     },

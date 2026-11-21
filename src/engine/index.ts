@@ -146,6 +146,7 @@ export {
   nameCompatibility,
   nameNumber,
   nameNumerology,
+  numberCompatibility,
   type PlateAnalysis,
   vehicleLuckyNumber,
   vehiclePlateAnalyser,

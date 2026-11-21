@@ -716,6 +716,45 @@ export function vehiclePlateAnalyser(plate: string, dateISO: string): PlateAnaly
   };
 }
 
+/** Name-root vs owner-date compatibility (S14-2 AC-1: name-numerology gains
+ *  an optional owner date). Same consensus matrix as the plate analyser:
+ *  root compared to the date's mulank AND bhagyank rows; numbers absent from
+ *  a row (e.g. 7 against a 6 row) read as neutral. */
+export function numberCompatibility(
+  root: number,
+  dateISO: string,
+): {
+  owner_mulank: number;
+  owner_bhagyank: number;
+  relation_to_mulank: "friendly" | "neutral" | "enemy";
+  relation_to_bhagyank: "friendly" | "neutral" | "enemy";
+  verdict: "Supportive" | "Neutral" | "Challenging";
+} {
+  const day = Number(dateISO.slice(8, 10));
+  const digits = dateISO.replace(/\D/g, "");
+  const mulank = digitalRoot(day);
+  const bhagyank = digitalRoot(digits.split("").reduce((a, c) => a + Number(c), 0));
+  const mulankRow = NUMBER_MATRIX[mulank] ?? NUMBER_MATRIX[1]!;
+  const bhagyankRow = NUMBER_MATRIX[bhagyank] ?? NUMBER_MATRIX[1]!;
+  const relation = (n: number, row: { friends: number[]; neutral: number[]; enemies: number[] }) =>
+    row.friends.includes(n) ? "friendly" : row.enemies.includes(n) ? "enemy" : "neutral";
+  const relMulank = relation(root, mulankRow);
+  const relBhagyank = relation(root, bhagyankRow);
+  const verdict =
+    relMulank === "enemy" || relBhagyank === "enemy"
+      ? "Challenging"
+      : relMulank === "friendly" && relBhagyank === "friendly"
+        ? "Supportive"
+        : "Neutral";
+  return {
+    owner_mulank: mulank,
+    owner_bhagyank: bhagyank,
+    relation_to_mulank: relMulank,
+    relation_to_bhagyank: relBhagyank,
+    verdict,
+  };
+}
+
 /** Mobile numerology — strips the common Indian prefixes (+91 / 91 / leading
  *  0) BEFORE summing when what remains is a 10-digit number starting 6–9
  *  (Epic 14 QN-01: "+91 98765 43210" used to sum to 55/1 instead of 45/9).

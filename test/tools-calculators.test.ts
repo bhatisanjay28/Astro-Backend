@@ -180,6 +180,22 @@ describe("GET /api/v1/calculators routes", () => {
     const badPlate = await app.request("/api/v1/calculators/vehicle-plate?date=1990-06-15");
     expect(badPlate.status).toBe(400);
 
+    const nameNum = await app.request("/api/v1/calculators/name-numerology?name=Sanjay%20Bhati");
+    expect(nameNum.status).toBe(200);
+    const nameNumJson = (await nameNum.json()) as {
+      data: { owner_compatibility: unknown | null };
+    };
+    expect(nameNumJson.data.owner_compatibility).toBeNull();
+
+    const nameNumDated = await app.request(
+      "/api/v1/calculators/name-numerology?name=Poonam&date=1990-06-15",
+    );
+    expect(nameNumDated.status).toBe(200);
+    const datedJson = (await nameNumDated.json()) as {
+      data: { owner_compatibility: { verdict: string } | null };
+    };
+    expect(datedJson.data.owner_compatibility?.verdict).toBe("Supportive");
+
     const bad = await app.request("/api/v1/calculators/numerology?date=junk");
     expect(bad.status).toBe(400);
   });
