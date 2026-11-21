@@ -229,7 +229,8 @@ const YONI_ENEMY: Partial<Record<YoniAnimal, YoniAnimal>> = {
 // neutral-neutral → 2; friend-enemy → 1; neutral-enemy → 0.5; enemy-enemy → 0.
 // ---------------------------------------------------------------------------
 
-const RASHI_LORDS = [
+/** Ruling planet per rashi (Aries→Pisces) — shared with the calculator layer. */
+export const RASHI_LORDS = [
   "Mars",
   "Venus",
   "Mercury",

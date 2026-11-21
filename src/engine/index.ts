@@ -18,7 +18,16 @@ export {
   sunSiderealLon,
   sunTropicalLon,
 } from "./bodies";
-export { moonPhaseName, numerology, rashiAndNakshatra, sunSignTropical } from "./calculators";
+export {
+  destinyNumber,
+  moonPhaseDetails,
+  moonPhaseName,
+  numerology,
+  phaseNameFromElong,
+  rashiAndNakshatra,
+  sunSignDetails,
+  sunSignTropical,
+} from "./calculators";
 export {
   type ChoghadiyaNature,
   type ChoghadiyaSlot,
@@ -79,6 +88,7 @@ export {
   type MatchProfile,
   manglik,
   matchProfile,
+  RASHI_LORDS,
 } from "./matching";
 export { findMuhurats, type MuhuratDayResult, type MuhuratFinderResult } from "./muhurat";
 export {

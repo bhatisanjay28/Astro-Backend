@@ -8,6 +8,7 @@
 import { Hono } from "hono";
 import {
   ageOn,
+  destinyNumber,
   ENGINE_VERSION,
   flames,
   friendshipCompatibility,
@@ -19,11 +20,13 @@ import {
   loShuGrid,
   loveCompatibility,
   mobileNumerology,
+  moonPhaseDetails,
   nameCompatibility,
   nameNumerology,
   planetaryPositions,
   rashiAndNakshatra,
   sadeSati,
+  sunSignDetails,
   vehicleLuckyNumber,
 } from "../../engine";
 import type { AppEnv } from "../../env";
@@ -55,6 +58,15 @@ function requireDate(c: any): string | null {
   const date = c.req.query("date");
   if (!date || !DATE_Q_RE.test(date)) return null;
   return date;
+}
+
+/** Reject impossible calendar dates (2025-02-30) — Bun's ISO parser rolls them
+ *  over silently, so a NaN check on `new Date(...)` never fires. */
+function isCalendarDate(dateISO: string): boolean {
+  const [y, m, d] = dateISO.split("-").map(Number);
+  if (!y || !m || !d || m < 1 || m > 12 || d < 1 || d > 31) return false;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +128,43 @@ calculatorsRoute.get("/calculators/ishta-devata", (c) => {
     data: { ...ishtaDevata(positions), engine_version: ENGINE_VERSION },
     meta: { consent_note: "Birth details are processed on request and are not stored." },
   });
+});
+
+/** GET /calculators/moon-phase?date&[time=HH:MM] — phase, illumination, age, neighbour lunations. */
+calculatorsRoute.get("/calculators/moon-phase", (c) => {
+  const date = requireDate(c);
+  if (!date) return badRequest(c, "date must be YYYY-MM-DD");
+  if (!isCalendarDate(date)) return badRequest(c, "date is not a valid calendar date");
+  const time = c.req.query("time") || "12:00";
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+    return badRequest(c, "time must be HH:MM (24h, UTC)");
+  }
+  const instant = new Date(`${date}T${time}:00Z`);
+  if (Number.isNaN(instant.getTime())) return badRequest(c, "Invalid date");
+  return c.json({
+    data: { ...moonPhaseDetails(instant), engine_version: ENGINE_VERSION },
+    meta: { note: "date and time are interpreted in UTC; time defaults to 12:00 UTC" },
+  });
+});
+
+/** GET /calculators/sun-sign?date= — Western tropical sign + Vedic Surya Rashi (noon UTC). */
+calculatorsRoute.get("/calculators/sun-sign", (c) => {
+  const date = requireDate(c);
+  if (!date) return badRequest(c, "date must be YYYY-MM-DD");
+  if (!isCalendarDate(date)) return badRequest(c, "date is not a valid calendar date");
+  try {
+    return c.json({ data: { ...sunSignDetails(date), engine_version: ENGINE_VERSION } });
+  } catch {
+    return badRequest(c, "Invalid date");
+  }
+});
+
+/** GET /calculators/destiny-number?date= — Bhagyank + Mulank with planetary lords. */
+calculatorsRoute.get("/calculators/destiny-number", (c) => {
+  const date = requireDate(c);
+  if (!date) return badRequest(c, "date must be YYYY-MM-DD");
+  if (!isCalendarDate(date)) return badRequest(c, "date is not a valid calendar date");
+  return c.json({ data: { ...destinyNumber(date), engine_version: ENGINE_VERSION } });
 });
 
 // ---------------------------------------------------------------------------
