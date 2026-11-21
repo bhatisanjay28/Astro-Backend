@@ -81,8 +81,20 @@ describe("sadeSati (structural invariants, injected now)", () => {
     expect(r.saturn_sign_index).toBeLessThanOrEqual(11);
     const offset = (r.saturn_sign_index - r.moon_sign_index + 12) % 12;
     expect(r.saturn_offset_from_moon).toBe(offset);
-    expect(r.in_sade_sati).toBe(offset === 0 || offset === 1 || offset === 11);
-    expect(r.phase).toBe(offset === 11 ? 1 : offset === 0 ? 2 : offset === 1 ? 3 : null);
+    // Dip-tolerant (QB-06): when Saturn is OUTSIDE the trio in a mid-window
+    // retro dip the window still stands, so in_sade_sati can be true with an
+    // out-of-trio offset — but when Saturn IS in the trio the window must
+    // always be open.
+    if (offset === 0 || offset === 1 || offset === 11) {
+      expect(r.in_sade_sati).toBe(true);
+    }
+    if (r.in_sade_sati) {
+      expect(r.phase).not.toBeNull();
+      expect(r.phase_windows.length).toBeGreaterThan(0);
+    } else {
+      expect(r.phase).toBeNull();
+    }
+    expect(r.in_dhaiya).toBe(r.dhaiya_house !== null);
     expect(r.verified).toBe(false);
     expect(r.note).toContain("P11");
     if (r.in_sade_sati) {
@@ -97,6 +109,7 @@ describe("sadeSati (structural invariants, injected now)", () => {
       expect(end - start).toBeGreaterThan(6 * 365.25 * 86400000);
       expect(end - start).toBeLessThan(9 * 365.25 * 86400000);
     } else {
+      expect(r.in_sade_sati).toBe(false);
       expect(r.phase).toBeNull();
       expect(r.next).toBeTruthy(); // there is always a next window within ~30y
     }

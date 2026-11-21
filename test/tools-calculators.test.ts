@@ -58,11 +58,17 @@ describe("tools engine", () => {
     }
   });
 
-  test("ishtaDevata: returns AK + navamsha sign, defers deity (P11)", () => {
+  test("ishtaDevata: classical 12th-from-Karakamsha (D-QB08) with disputed flags (P11)", () => {
     const r = ishtaDevata(planetaryPositions(NATAL));
-    expect(r.ishta_devata).toBeNull();
-    expect(r.note).toContain("P11");
+    expect(r.atmakaraka).toBeTruthy();
     expect(r.navamsha_sign).toBeTruthy();
+    expect(r.karakamsha_sign).toBe(r.navamsha_sign);
+    expect(r.jivanmukta_sign).toBeTruthy();
+    expect(r.ishta_devata).toBeTruthy();
+    expect(r.derivation_source).toContain("12th");
+    expect(Array.isArray(r.alternates)).toBe(true);
+    expect(r.note).toContain("P11");
+    expect(r.verified).toBe(false);
   });
 
   test("kaalSarp: structural validity on a real chart", () => {
@@ -87,11 +93,14 @@ describe("tools engine", () => {
     expect(all).toContain(flames("Ram", "Sita").result);
   });
 
-  test("fun pair scores stay in the 55–95 band", () => {
+  test("fun pair scores span the 0–99 paper-game band (D-QF10)", () => {
     for (const fn of [loveCompatibility, friendshipCompatibility]) {
       const r = fn("Arjun", "Meera");
-      expect(r.score).toBeGreaterThanOrEqual(55);
-      expect(r.score).toBeLessThanOrEqual(95);
+      expect(r.score).toBeGreaterThanOrEqual(0);
+      expect(r.score).toBeLessThanOrEqual(99);
+      expect(typeof r.band).toBe("string");
+      expect((r.band as string).length).toBeGreaterThan(0);
+      expect(Array.isArray(r.steps)).toBe(true);
     }
     const nc = nameCompatibility("Arjun", "Meera");
     expect(nc.combined_root).toBeGreaterThanOrEqual(1);
@@ -109,13 +118,16 @@ describe("tools engine", () => {
     expect(nameNumerology("Ram").root).toBe(7);
   });
 
-  test("ageOn: exact calendar age", () => {
-    expect(ageOn("1990-06-15", "2026-11-19")).toEqual({
-      years: 36,
-      months: 5,
-      days: 4,
-      total_days: 13306,
-    });
+  test("ageOn: exact calendar age + extras (QF-15)", () => {
+    const a = ageOn("1990-06-15", "2026-11-19");
+    expect(a.years).toBe(36);
+    expect(a.months).toBe(5);
+    expect(a.days).toBe(4);
+    expect(a.total_days).toBe(13306);
+    expect(a.total_weeks).toBe(Math.floor(13306 / 7));
+    expect(a.day_of_week).toBe("Friday");
+    expect(a.next_birthday.days_until).toBe(208); // 1990-06-15 → next 2027-06-15
+    expect(a.next_birthday.weekday).toBeTruthy();
   });
 });
 
@@ -141,14 +153,32 @@ describe("GET /api/v1/calculators routes", () => {
   it("numerology suite endpoints validate and compute", async () => {
     const num = await app.request("/api/v1/calculators/numerology?date=1990-06-15&name=Ram");
     expect(num.status).toBe(200);
-    const numJson = (await num.json()) as { data: { mulank: number; destiny: number } };
-    expect(numJson.data.mulank).toBe(6);
+    const numJson = (await num.json()) as {
+      data: {
+        mulank: { value: number };
+        bhagyank: { value: number };
+        name: { root: number } | null;
+      };
+    };
+    expect(numJson.data.mulank.value).toBe(6);
+    expect(numJson.data.bhagyank.value).toBeTruthy();
+    expect(numJson.data.name?.root).toBe(7);
 
     const lo = await app.request("/api/v1/calculators/lo-shu?date=1990-06-15");
     expect(lo.status).toBe(200);
 
     const veh = await app.request("/api/v1/calculators/vehicle-number?date=1990-06-15");
     expect(veh.status).toBe(200);
+
+    const plate = await app.request(
+      "/api/v1/calculators/vehicle-plate?plate=DL8CAF1234&date=1990-06-15",
+    );
+    expect(plate.status).toBe(200);
+    const plateJson = (await plate.json()) as { data: { verdict: string } };
+    expect(typeof plateJson.data.verdict).toBe("string");
+
+    const badPlate = await app.request("/api/v1/calculators/vehicle-plate?date=1990-06-15");
+    expect(badPlate.status).toBe(400);
 
     const bad = await app.request("/api/v1/calculators/numerology?date=junk");
     expect(bad.status).toBe(400);

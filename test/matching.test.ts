@@ -150,9 +150,11 @@ describe("manglik", () => {
       const rawHit = doshaHouses.has(lagna) || doshaHouses.has(moon) || doshaHouses.has(venus);
       if (m.cancelled) {
         expect(m.is_manglik).toBe(false);
-        expect(m.from_lagna).toBe(false);
-        expect(m.from_moon).toBe(false);
-        expect(m.from_venus).toBe(false);
+        // QB-05: from_* report RAW placements — cancellation is a separate
+        // flag, never folded into the placement booleans.
+        expect(m.from_lagna).toBe(doshaHouses.has(lagna));
+        expect(m.from_moon).toBe(doshaHouses.has(moon));
+        expect(m.from_venus).toBe(doshaHouses.has(venus));
         expect(m.cancellation_reason).toBeTruthy();
       } else {
         expect(m.is_manglik).toBe(rawHit);

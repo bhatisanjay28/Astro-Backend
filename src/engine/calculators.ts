@@ -102,26 +102,91 @@ export function sunSignTropical(dateISO: string): string {
   return SIGNS_TROPICAL[Math.floor(lon / 30)] ?? "Aries";
 }
 
-/** Sun sign pair — Western tropical sign + Vedic Surya Rashi (with nakshatra + lord). */
-export function sunSignDetails(dateISO: string): {
+/** Sanskrit name, element and approximate tropical date range per sign. */
+const SUN_SIGN_META: Record<string, { sanskrit: string; element: string; approx: string }> = {
+  Aries: { sanskrit: "Mesha", element: "Fire", approx: "Mar 21 – Apr 19" },
+  Taurus: { sanskrit: "Vrishabha", element: "Earth", approx: "Apr 20 – May 20" },
+  Gemini: { sanskrit: "Mithuna", element: "Air", approx: "May 21 – Jun 20" },
+  Cancer: { sanskrit: "Karka", element: "Water", approx: "Jun 21 – Jul 22" },
+  Leo: { sanskrit: "Simha", element: "Fire", approx: "Jul 23 – Aug 22" },
+  Virgo: { sanskrit: "Kanya", element: "Earth", approx: "Aug 23 – Sep 22" },
+  Libra: { sanskrit: "Tula", element: "Air", approx: "Sep 23 – Oct 22" },
+  Scorpio: { sanskrit: "Vrishchika", element: "Water", approx: "Oct 23 – Nov 21" },
+  Sagittarius: { sanskrit: "Dhanu", element: "Fire", approx: "Nov 22 – Dec 21" },
+  Capricorn: { sanskrit: "Makara", element: "Earth", approx: "Dec 22 – Jan 19" },
+  Aquarius: { sanskrit: "Kumbha", element: "Air", approx: "Jan 20 – Feb 18" },
+  Pisces: { sanskrit: "Meena", element: "Water", approx: "Feb 19 – Mar 20" },
+};
+
+/**
+ * Sun sign pair — Western tropical sign + Vedic Surya Rashi (with nakshatra +
+ * lord). `instant` (optional, from route-side birth resolution) gives the
+ * EXACT longitude at the birth moment; without it the function falls back to
+ * the 12:00-UTC approximation. Cusp flag fires within 1° of an ingress.
+ */
+export function sunSignDetails(
+  dateISO: string,
+  instant?: Date,
+): {
   tropical_sign: string;
+  tropical_longitude: number;
   rashi: string;
   rashiIndex: number;
   nakshatra: string;
   nakshatraIndex: number;
   pada: number;
   lord: string;
+  element: string;
+  sanskrit_name: string;
+  approximate_dates: string;
+  evaluated_at: string;
+  cusp: { neighbouring_sign: string; degrees_to_boundary: number; warning: string } | null;
 } {
-  const noon = new Date(`${dateISO}T12:00:00Z`);
-  if (Number.isNaN(noon.getTime())) throw new Error("invalid date");
-  const sid = sunSiderealLon(noon);
+  const at = instant ?? new Date(`${dateISO}T12:00:00Z`);
+  if (Number.isNaN(at.getTime())) throw new Error("invalid date");
+  const tropicalLon = ((sunTropicalLon(at) % 360) + 360) % 360;
+  const sid = sunSiderealLon(at);
   const sign = signOf(sid);
+  const tIdx = Math.floor(tropicalLon / 30) % 12;
+  const tropicalSign = SIGNS_TROPICAL[tIdx] ?? "Aries";
+  const meta = SUN_SIGN_META[tropicalSign] ?? {
+    sanskrit: tropicalSign,
+    element: "—",
+    approx: "—",
+  };
+
+  // Cusp: distance to the nearest 30° tropical boundary. Within 1°, the sign
+  // may flip if the stated time is off (only meaningful with an exact instant).
+  const within = tropicalLon % 30;
+  let cusp: { neighbouring_sign: string; degrees_to_boundary: number; warning: string } | null =
+    null;
+  const distToLower = Math.min(within, 30 - within);
+  if (distToLower <= 1) {
+    const prevSign = SIGNS_TROPICAL[(tIdx + 11) % 12] ?? "Aries";
+    const nextSign = SIGNS_TROPICAL[(tIdx + 1) % 12] ?? "Aries";
+    const nearLower = within < 15;
+    const other = nearLower ? prevSign : nextSign;
+    cusp = {
+      neighbouring_sign: other,
+      degrees_to_boundary: Math.round(distToLower * 100) / 100,
+      warning: `Birth falls within ${Math.round(distToLower * 100) / 100}° of the ${tropicalSign}/${other} boundary — with an inexact birth time the sign could be ${other} instead. Provide the exact birth time for certainty.`,
+    };
+  }
+
   return {
-    tropical_sign: sunSignTropical(dateISO),
+    tropical_sign: tropicalSign,
+    tropical_longitude: Math.round(tropicalLon * 100) / 100,
     rashi: sign.sign,
     rashiIndex: sign.signIndex,
     ...nakshatraOf(sid),
     lord: RASHI_LORDS[sign.signIndex] ?? "Mars",
+    element: meta.element,
+    sanskrit_name: meta.sanskrit,
+    approximate_dates: meta.approx,
+    evaluated_at: instant
+      ? `exact instant ${instant.toISOString()}`
+      : "date only — evaluated at 12:00 UTC approximation",
+    cusp,
   };
 }
 

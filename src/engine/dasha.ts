@@ -129,3 +129,81 @@ export function vimshottari(moonLon: number, birth: Date, count = 9): Vimshottar
 export function vimshottariFromMoon(birth: Date, count = 9): VimshottariResult {
   return vimshottari(moonSiderealLon(birth), birth, count);
 }
+
+// ---------------------------------------------------------------------------
+// Antardashas + current-position lookup (Epic 14, S14-1b).
+// ---------------------------------------------------------------------------
+
+export interface AntardashaPeriod {
+  lord: string;
+  start: Date;
+  end: Date;
+  years: number;
+}
+
+/**
+ * Antardasha (sub-period) sequence of one mahadasha: runs in DASHA_ORDER
+ * starting with the maha lord; each length = maha span × (sub years / 120).
+ * For the balance-truncated first mahadasha every antardasha scales
+ * proportionally, so the sub-periods always sum exactly to the maha span.
+ */
+export function antardashasOf(maha: DashaPeriod): AntardashaPeriod[] {
+  const lordIdx = DASHA_ORDER.indexOf(maha.lord as (typeof DASHA_ORDER)[number]);
+  const spanMs = maha.end.getTime() - maha.start.getTime();
+  const out: AntardashaPeriod[] = [];
+  // Cumulative boundaries (not per-step accumulation) so the sub-periods sum
+  // to the maha span with zero float drift.
+  let cumulativeYears = 0;
+  for (let i = 0; i < 9; i++) {
+    const lord = DASHA_ORDER[(lordIdx + i) % 9]!;
+    const startMs = maha.start.getTime() + (spanMs * cumulativeYears) / 120;
+    cumulativeYears += DASHA_YEARS[lord];
+    const endMs = maha.start.getTime() + (spanMs * cumulativeYears) / 120;
+    out.push({
+      lord,
+      start: new Date(startMs),
+      end: new Date(endMs),
+      years: Math.round(((endMs - startMs) / YEAR_MS) * 1000) / 1000,
+    });
+  }
+  return out;
+}
+
+export interface DashaCurrent {
+  mahadasha_lord: string;
+  mahadasha_start: Date;
+  mahadasha_end: Date;
+  antardasha_lord: string;
+  antardasha_start: Date;
+  antardasha_end: Date;
+  antardasha_index: number;
+  /** Fraction (0–1) of the current antardasha elapsed at `now`. */
+  elapsed_fraction: number;
+  next_antardasha_lord: string | null;
+  next_antardasha_start: Date | null;
+}
+
+/** Where does `now` sit in the cycle? null when outside the computed span. */
+export function vimshottariCurrent(mahadashas: DashaPeriod[], now: Date): DashaCurrent | null {
+  const t = now.getTime();
+  const maha = mahadashas.find((m) => t >= m.start.getTime() && t < m.end.getTime());
+  if (!maha) return null;
+  const subs = antardashasOf(maha);
+  const sub = subs.find((s) => t >= s.start.getTime() && t < s.end.getTime());
+  if (!sub) return null;
+  const idx = subs.indexOf(sub);
+  const nextSub = subs[idx + 1] ?? null;
+  const fraction = (t - sub.start.getTime()) / (sub.end.getTime() - sub.start.getTime());
+  return {
+    mahadasha_lord: maha.lord,
+    mahadasha_start: maha.start,
+    mahadasha_end: maha.end,
+    antardasha_lord: sub.lord,
+    antardasha_start: sub.start,
+    antardasha_end: sub.end,
+    antardasha_index: idx,
+    elapsed_fraction: Math.round(fraction * 1e6) / 1e6,
+    next_antardasha_lord: nextSub?.lord ?? null,
+    next_antardasha_start: nextSub?.start ?? null,
+  };
+}

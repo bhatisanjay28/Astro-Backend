@@ -99,7 +99,7 @@ export interface Panchang {
   engine_version: string;
 }
 
-export const ENGINE_VERSION = "1.3.0-alpha1";
+export const ENGINE_VERSION = "1.4.0-alpha1";
 
 const DAY_MS = 86400000;
 const DEG_PER_DAY_ELONGATION = 10; // true ≈ 12.2 — keep below for safe search hops

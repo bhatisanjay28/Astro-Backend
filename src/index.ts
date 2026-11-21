@@ -15,9 +15,11 @@ export default {
 
 /**
  * Local dev server via Bun (`bun run dev`) — DECISIONS.md D2.
- * Not executed on Cloudflare Workers (no Bun global there).
+ * Not executed on Cloudflare Workers (no Bun global there), and gated on
+ * import.meta.main so scripts that merely IMPORT this entry (QA runners)
+ * don't boot a server and hold the event loop open.
  */
-if (typeof Bun !== "undefined") {
+if (typeof Bun !== "undefined" && import.meta.main) {
   const port = Number(process.env.PORT ?? 3000);
   // Workers receive bindings via c.env; in local Bun dev, supply process.env so
   // routes that need SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY can reach Supabase.

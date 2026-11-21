@@ -26,9 +26,18 @@ export interface SadeSatiWindow {
   end: string;
 }
 
+export interface SadeSatiPhase {
+  phase: 1 | 2 | 3;
+  start: string;
+  end: string;
+}
+
 export interface SadeSatiResult {
   in_sade_sati: boolean;
   phase: 1 | 2 | 3 | null;
+  /** Dhaiya: Saturn transiting the 4th or 8th sign from natal Moon. */
+  in_dhaiya: boolean;
+  dhaiya_house: 4 | 8 | null;
   moon_sign: string;
   moon_sign_index: number;
   saturn_sign: string;
@@ -37,6 +46,8 @@ export interface SadeSatiResult {
   saturn_offset_from_moon: number;
   /** The active window (when in Sade Sati). */
   current: SadeSatiWindow | null;
+  /** Phase sub-windows of the active window (dips folded into prior phase). */
+  phase_windows: SadeSatiPhase[];
   /** The next upcoming window (always present within one Saturn circuit). */
   next: SadeSatiWindow | null;
   note: string;
@@ -121,30 +132,110 @@ function finalTrioExit(moonSign: number, windowStart: Date): Date | null {
 }
 
 /**
- * Start of the CURRENT window: walk backwards from `now` to the last instant
- * Saturn was outside the trio, then bisect forward to the re-entry (= the
- * first trio entry of this run).
+ * Start of the window that `now` falls inside, or null when `now` lies between
+ * windows (QB-06). Backward walk with dip tolerance: a short outside stretch
+ * (< FINAL_EXIT_DAYS) is a mid-window retro dip — skipped, mirroring
+ * finalTrioExit; an outside stretch ≥ FINAL_EXIT_DAYS means the last window
+ * closed, so there is no open window at `now`.
  */
 function currentWindowStart(moonSign: number, now: Date): Date | null {
-  const limit = new Date(now.getTime() - MAX_SEARCH_YEARS * 365.25 * 86400000);
+  const limitMs = now.getTime() - MAX_SEARCH_YEARS * 365.25 * 86400000;
+  const limit = new Date(limitMs);
   let cursor = new Date(now.getTime());
-  while (cursor > limit) {
+  // If Saturn is outside the trio now, first decide whether that is a dip or
+  // a closed window: walk back through the outside run; reaching the trio
+  // within FINAL_EXIT_DAYS ⇒ dip (keep searching for this window's start);
+  // otherwise the window is over and `now` sits between windows.
+  if (!inTrio(signIndexOf(saturnSiderealLon(cursor)), moonSign)) {
+    let outsideDays = 0;
+    while (
+      cursor.getTime() > limitMs &&
+      !inTrio(signIndexOf(saturnSiderealLon(cursor)), moonSign)
+    ) {
+      outsideDays += BACKWARD_SAMPLE_DAYS;
+      cursor = new Date(cursor.getTime() - BACKWARD_SAMPLE_DAYS * 86400000);
+    }
+    if (cursor.getTime() <= limitMs) return null;
+    if (outsideDays >= FINAL_EXIT_DAYS) return null; // window closed — between windows
+    // else: mid-window dip — cursor is now inside the trio; fall through.
+  }
+  // Walk backward to this window's first trio entry, skipping interior dips.
+  while (cursor.getTime() > limitMs) {
     const prev = new Date(cursor.getTime() - BACKWARD_SAMPLE_DAYS * 86400000);
-    const sPrev = signIndexOf(saturnSiderealLon(prev));
-    if (!inTrio(sPrev, moonSign)) {
-      // Re-entry lies between prev and cursor — bisect on trio membership.
-      let l = prev.getTime();
-      let h = cursor.getTime();
-      while (h - l > 60_000) {
-        const mid = (l + h) / 2;
-        if (inTrio(signIndexOf(saturnSiderealLon(new Date(mid))), moonSign)) h = mid;
-        else l = mid;
+    if (!inTrio(signIndexOf(saturnSiderealLon(prev)), moonSign)) {
+      // Candidate re-entry between prev and cursor. Is the outside stretch
+      // BEFORE prev a final exit or another interior dip?
+      let back = prev.getTime();
+      const stretchLimit = back - FINAL_EXIT_DAYS * 86400000;
+      let dipped = false;
+      while (back > stretchLimit && back > limitMs) {
+        back -= 10 * 86400000;
+        if (inTrio(signIndexOf(saturnSiderealLon(new Date(back))), moonSign)) {
+          dipped = true;
+          break;
+        }
       }
-      return new Date(h);
+      if (!dipped) {
+        // Final exit precedes this run — bisect the re-entry instant.
+        let l = prev.getTime();
+        let h = cursor.getTime();
+        while (h - l > 60_000) {
+          const mid = (l + h) / 2;
+          if (inTrio(signIndexOf(saturnSiderealLon(new Date(mid))), moonSign)) h = mid;
+          else l = mid;
+        }
+        return new Date(h);
+      }
+      cursor = new Date(back); // interior dip — resume from inside the trio
+      continue;
     }
     cursor = prev;
   }
   return null;
+}
+
+/**
+ * Phase sub-windows of one Sade Sati window (QB-07). Walk the window with
+ * sign-change bisection; a phase boundary is a sign change into a different
+ * trio phase. Retro dips OUTSIDE the trio keep the previous phase (classical
+ * presentation), so dip time folds into the preceding phase segment.
+ */
+function phaseWindows(moonSign: number, windowStart: Date, windowEnd: Date): SadeSatiPhase[] {
+  const phaseAt = (sign: number): 1 | 2 | 3 | null => {
+    if (!inTrio(sign, moonSign)) return null;
+    const offset = (sign - moonSign + SIGNS_COUNT) % SIGNS_COUNT;
+    return offset === 11 ? 1 : offset === 0 ? 2 : 3;
+  };
+  const out: SadeSatiPhase[] = [];
+  let cursor = windowStart.getTime();
+  const endMs = windowEnd.getTime();
+  let currentPhase = phaseAt(signIndexOf(saturnSiderealLon(new Date(cursor)))) ?? 1;
+  let segmentStart = cursor;
+  while (cursor < endMs) {
+    const next = cursor + SAMPLE_DAYS * 86400000;
+    const sPrev = signIndexOf(saturnSiderealLon(new Date(cursor)));
+    const sNext = signIndexOf(saturnSiderealLon(new Date(Math.min(next, endMs))));
+    if (sPrev !== sNext) {
+      const crossing = bisectCrossing(cursor, Math.min(next, endMs), sPrev).getTime();
+      const newPhase = phaseAt(sNext);
+      if (newPhase !== null && newPhase !== currentPhase) {
+        out.push({
+          phase: currentPhase,
+          start: new Date(segmentStart).toISOString(),
+          end: new Date(crossing).toISOString(),
+        });
+        segmentStart = crossing;
+        currentPhase = newPhase;
+      }
+    }
+    cursor = next;
+  }
+  out.push({
+    phase: currentPhase,
+    start: new Date(segmentStart).toISOString(),
+    end: new Date(endMs).toISOString(),
+  });
+  return out;
 }
 
 /**
@@ -160,24 +251,37 @@ export function sadeSati(natal: KundliInput, now: Date = new Date()): SadeSatiRe
   const saturnLon = saturnSiderealLon(now);
   const saturnSign = signIndexOf(saturnLon);
   const offset = (saturnSign - moonSign + SIGNS_COUNT) % SIGNS_COUNT;
-  const saturnInTrioNow = inTrio(saturnSign, moonSign);
 
-  // Active window: when Saturn is inside the trio, its start is the first
-  // entry of the current run; the end is the FINAL exit from the trio.
+  // Active window: `currentWindowStart` is dip-tolerant — it returns the start
+  // of the window that `now` falls inside (even when Saturn is momentarily
+  // OUTSIDE the trio in a mid-window retro dip), or null when `now` lies
+  // between windows. The end is the FINAL exit from the trio.
   let current: SadeSatiWindow | null = null;
   let next: SadeSatiWindow | null = null;
-  if (saturnInTrioNow) {
-    const start = currentWindowStart(moonSign, now);
-    if (start) {
-      const end = finalTrioExit(moonSign, start);
-      if (end) {
-        current = { start: start.toISOString(), end: end.toISOString() };
-        const nextEntry = nextTrioEntry(moonSign, end);
-        if (nextEntry) {
-          const nextEnd = finalTrioExit(moonSign, nextEntry);
-          if (nextEnd) {
-            next = { start: nextEntry.toISOString(), end: nextEnd.toISOString() };
-          }
+  let currentStart: Date | null = null;
+  let currentEnd: Date | null = null;
+  const start = currentWindowStart(moonSign, now);
+  if (start) {
+    const end = finalTrioExit(moonSign, start);
+    if (end && end.getTime() > now.getTime()) {
+      currentStart = start;
+      currentEnd = end;
+      current = { start: start.toISOString(), end: end.toISOString() };
+      // Next window: the first trio entry after this window's final exit.
+      const nextEntry = nextTrioEntry(moonSign, end);
+      if (nextEntry) {
+        const nextEnd = finalTrioExit(moonSign, nextEntry);
+        if (nextEnd) {
+          next = { start: nextEntry.toISOString(), end: nextEnd.toISOString() };
+        }
+      }
+    } else {
+      // Last window has closed; the next one opens after its final exit.
+      const nextEntry = nextTrioEntry(moonSign, end ?? now);
+      if (nextEntry) {
+        const nextEnd = finalTrioExit(moonSign, nextEntry);
+        if (nextEnd) {
+          next = { start: nextEntry.toISOString(), end: nextEnd.toISOString() };
         }
       }
     }
@@ -191,23 +295,41 @@ export function sadeSati(natal: KundliInput, now: Date = new Date()): SadeSatiRe
     }
   }
 
+  // Dhaiya: Saturn transiting the 4th (offset 3) or 8th (offset 7) sign from
+  // natal Moon — "Small Panoti", independent of Sade Sati membership.
+  const dhaiyaHouse: 4 | 8 | null = offset === 3 ? 4 : offset === 7 ? 8 : null;
+  const phaseWindowsOut =
+    currentStart !== null && currentEnd !== null
+      ? phaseWindows(moonSign, currentStart, currentEnd)
+      : [];
+
   const inSadeSati = current !== null;
-  // Phase from Saturn's instantaneous offset; during a mid-window retro dip
-  // (Saturn momentarily outside the trio) the classical presentation keeps
-  // the last phase, so an in-window dip reports 3.
-  const phase: 1 | 2 | 3 | null = !inSadeSati ? null : offset === 11 ? 1 : offset === 0 ? 2 : 3;
+  // Phase: from the phase sub-windows (dips folded), so a mid-window retro dip
+  // keeps the classical presentation instead of dropping the phase to null.
+  let phase: 1 | 2 | 3 | null = null;
+  if (inSadeSati) {
+    const nowMs = now.getTime();
+    const seg = phaseWindowsOut.find((w) => {
+      const t = nowMs;
+      return t >= Date.parse(w.start) && t <= Date.parse(w.end);
+    });
+    phase = seg ? seg.phase : offset === 11 ? 1 : offset === 0 ? 2 : 3;
+  }
 
   return {
     in_sade_sati: inSadeSati,
     phase,
+    in_dhaiya: dhaiyaHouse !== null,
+    dhaiya_house: dhaiyaHouse,
     moon_sign: SIGNS[moonSign] ?? "Aries",
     moon_sign_index: moonSign,
     saturn_sign: SIGNS[saturnSign] ?? "Aries",
     saturn_sign_index: saturnSign,
     saturn_offset_from_moon: offset,
     current,
+    phase_windows: phaseWindowsOut,
     next,
-    note: "Sade Sati = Saturn transiting 12th/1st/2nd from natal Moon; window = first entry to final exit (mid-window retro dips ignored, classical presentation). Phases 1–3 in transit order. Pending Jyotishi review (P11).",
+    note: "Sade Sati = Saturn transiting 12th/1st/2nd from natal Moon; window = first entry to final exit (mid-window retro dips stay inside the window, classical presentation). Phases 1–3 in transit order; phase_windows fold dips into the preceding phase. Dhaiya = Saturn 4th/8th from Moon, reported separately. Pending Jyotishi review (P11).",
     verified: false,
   };
 }

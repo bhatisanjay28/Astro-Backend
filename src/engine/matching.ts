@@ -580,17 +580,22 @@ export function manglik(input: KundliInput): ManglikResult {
   const fromVenus = MANGLIK_HOUSES.has(houseFromVenus);
 
   // Cancellation: Mars in own sign (Aries/Scorpio) or exaltation (Capricorn).
-  const cancelled = marsSign === 0 || marsSign === 7 || marsSign === 9;
+  // QB-05: the raw from_* flags report the RAW placements — cancellation is a
+  // separate flag, never folded into the placement booleans (the UI can then
+  // show "placement present + cancelled" instead of silently hiding it).
+  const ownSign = marsSign === 0 || marsSign === 7;
+  const exalted = marsSign === 9;
+  const cancelled = ownSign || exalted;
   const cancellationReason = cancelled
-    ? `Mars in ${SIGNS[marsSign] ?? "Aries"} (own sign / exaltation) — classical cancellation.`
+    ? `Mars in ${SIGNS[marsSign] ?? "Aries"} (${ownSign ? "own sign" : "exaltation"}) — classical cancellation.`
     : null;
 
   const isManglik = !cancelled && (fromLagna || fromMoon || fromVenus);
   return {
     is_manglik: isManglik,
-    from_lagna: !cancelled && fromLagna,
-    from_moon: !cancelled && fromMoon,
-    from_venus: !cancelled && fromVenus,
+    from_lagna: fromLagna,
+    from_moon: fromMoon,
+    from_venus: fromVenus,
     mars_houses: { lagna: houseFromLagna, moon: houseFromMoon, venus: houseFromVenus },
     cancelled,
     cancellation_reason: cancellationReason,

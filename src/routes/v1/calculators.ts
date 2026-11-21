@@ -1,36 +1,45 @@
 /**
- * GET /api/v1/calculators/{tool} — Epic 4.4 (Tier 1) + 4.6 (Tier 2), PRD §5.7.
+ * GET /api/v1/calculators/{tool} — Epic 4.4 (Tier 1) + Epic 14 output expansion.
  *
- * Deterministic GET endpoints; birth-instant tools use the same no-PII birth
- * spec as POST /kundli. Fun tools (flames/love/friendship) carry for_fun
- * flags. All astrological verdicts keep the P11 verified:false flags.
+ * Birth-instant tools use the same no-PII birth spec as POST /kundli; every
+ * route carries a deterministic `interpretation` block (see engine/
+ * interpretations.ts). Astrological verdicts keep the P11 verified:false flags.
+ * Quick numerology/fun tools live in calculators-quick.ts.
  */
 import { Hono } from "hono";
 import {
-  ageOn,
+  antardashasOf,
   destinyNumber,
   ENGINE_VERSION,
-  flames,
-  friendshipCompatibility,
+  interpretAtmakaraka,
+  interpretCurrentDasha,
+  interpretIshtaDevata,
+  interpretKaalSarp,
+  interpretLagna,
+  interpretManglik,
+  interpretMoonPhase,
+  interpretNakshatra,
+  interpretRoot,
+  interpretSadeSati,
+  interpretSunSign,
   ishtaDevata,
   jaiminiKarakas,
+  KARAKA_SCHEME,
   type KundliInput,
   kaalSarp,
   lagna,
-  loShuGrid,
-  loveCompatibility,
-  mobileNumerology,
+  manglik,
   moonPhaseDetails,
-  nameCompatibility,
-  nameNumerology,
   planetaryPositions,
+  RASHI_LORDS,
   rashiAndNakshatra,
   sadeSati,
   sunSignDetails,
-  vehicleLuckyNumber,
+  vimshottariCurrent,
+  vimshottariFromMoon,
 } from "../../engine";
 import type { AppEnv } from "../../env";
-import { validateBirth } from "../../lib/birth";
+import { isCalendarDate, validateBirth } from "../../lib/birth";
 
 export const calculatorsRoute = new Hono<AppEnv>();
 
@@ -54,236 +63,264 @@ function kundliInput(birth: { instant: Date; spec: { lat: number; lng: number } 
 }
 
 const DATE_Q_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_Q_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 function requireDate(c: any): string | null {
   const date = c.req.query("date");
-  if (!date || !DATE_Q_RE.test(date)) return null;
+  if (!date || !DATE_Q_RE.test(date) || !isCalendarDate(date)) return null;
   return date;
 }
 
-/** Reject impossible calendar dates (2025-02-30) — Bun's ISO parser rolls them
- *  over silently, so a NaN check on `new Date(...)` never fires. */
-function isCalendarDate(dateISO: string): boolean {
-  const [y, m, d] = dateISO.split("-").map(Number);
-  if (!y || !m || !d || m < 1 || m > 12 || d < 1 || d > 31) return false;
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
-}
+const CONSENT_META = { consent_note: "Birth details are processed on request and are not stored." };
 
 // ---------------------------------------------------------------------------
-// Tier 1
+// Birth-chart Tier 1
 // ---------------------------------------------------------------------------
 
-/** GET /calculators/rashi?date&time&lat&lng&tz — Moon sign + nakshatra. */
+/** GET /calculators/rashi?date&time&lat&lng&tz — Moon sign + nakshatra + meaning. */
 calculatorsRoute.get("/calculators/rashi", (c) => {
   const birth = birthFromQuery(c);
   if (!birth.ok) return badRequest(c, birth.message);
   const result = rashiAndNakshatra(birth.instant);
+  const dasha = vimshottariFromMoon(birth.instant);
   return c.json({
-    data: { ...result, engine_version: ENGINE_VERSION },
-    meta: { consent_note: "Birth details are processed on request and are not stored." },
+    data: {
+      ...result,
+      lord: RASHI_LORDS[result.rashiIndex] ?? "Mars",
+      nakshatra_lord: dasha.moon_nakshatra_lord,
+      interpretation: interpretNakshatra(result.nakshatra, dasha.moon_nakshatra_lord, result.pada),
+      engine_version: ENGINE_VERSION,
+    },
+    meta: CONSENT_META,
   });
 });
 
-/** GET /calculators/sade-sati — Saturn transit status for a birth chart. */
+/** GET /calculators/nakshatra?birth= — Moon's nakshatra focus + dasha anchor. */
+calculatorsRoute.get("/calculators/nakshatra", (c) => {
+  const birth = birthFromQuery(c);
+  if (!birth.ok) return badRequest(c, birth.message);
+  const result = rashiAndNakshatra(birth.instant);
+  const dasha = vimshottariFromMoon(birth.instant);
+  return c.json({
+    data: {
+      nakshatra: result.nakshatra,
+      nakshatra_index: result.nakshatraIndex,
+      pada: result.pada,
+      moon_sign: result.rashi,
+      nakshatra_lord: dasha.moon_nakshatra_lord,
+      balance_at_birth_years: dasha.balance_at_birth_years,
+      interpretation: interpretNakshatra(result.nakshatra, dasha.moon_nakshatra_lord, result.pada),
+      engine_version: ENGINE_VERSION,
+    },
+    meta: CONSENT_META,
+  });
+});
+
+/** GET /calculators/lagna?birth= — rising sign (ascendant) + meaning. */
+calculatorsRoute.get("/calculators/lagna", (c) => {
+  const birth = birthFromQuery(c);
+  if (!birth.ok) return badRequest(c, birth.message);
+  const input = kundliInput(birth);
+  const asc = lagna(input);
+  const lord = RASHI_LORDS[asc.signIndex] ?? "Mars";
+  return c.json({
+    data: {
+      lagna: asc.sign,
+      sign_index: asc.signIndex,
+      nakshatra: asc.nakshatra,
+      pada: asc.pada,
+      lord,
+      interpretation: interpretLagna(asc.sign, lord),
+      engine_version: ENGINE_VERSION,
+    },
+    meta: CONSENT_META,
+  });
+});
+
+/** GET /calculators/vimshottari-dasha?birth= — mahadashas + antardashas + now. */
+calculatorsRoute.get("/calculators/vimshottari-dasha", (c) => {
+  const birth = birthFromQuery(c);
+  if (!birth.ok) return badRequest(c, birth.message);
+  const result = vimshottariFromMoon(birth.instant);
+  const now = new Date();
+  const current = vimshottariCurrent(result.mahadashas, now);
+  const activeMaha = current
+    ? (result.mahadashas.find((m) => m.lord === current.mahadasha_lord) ?? null)
+    : null;
+  return c.json({
+    data: {
+      moon_nakshatra: result.moon_nakshatra,
+      moon_nakshatra_lord: result.moon_nakshatra_lord,
+      balance_at_birth_years: result.balance_at_birth_years,
+      mahadashas: result.mahadashas,
+      current,
+      active_antardashas: activeMaha ? antardashasOf(activeMaha) : [],
+      interpretation: current
+        ? interpretCurrentDasha(current.mahadasha_lord, current.antardasha_lord)
+        : null,
+      engine_version: ENGINE_VERSION,
+    },
+    meta: { ...CONSENT_META, as_of: now.toISOString() },
+  });
+});
+
+/** GET /calculators/sade-sati?birth=[&as_of=YYYY-MM-DD] — Saturn transit status. */
 calculatorsRoute.get("/calculators/sade-sati", (c) => {
   const birth = birthFromQuery(c);
   if (!birth.ok) return badRequest(c, birth.message);
-  const result = sadeSati(kundliInput(birth), new Date());
+  const asOfRaw = c.req.query("as_of");
+  let asOf = new Date();
+  if (asOfRaw) {
+    if (!DATE_Q_RE.test(asOfRaw) || !isCalendarDate(asOfRaw)) {
+      return badRequest(c, "as_of must be YYYY-MM-DD");
+    }
+    asOf = new Date(`${asOfRaw}T12:00:00Z`);
+  }
+  const result = sadeSati(kundliInput(birth), asOf);
   return c.json({
-    data: { ...result, engine_version: ENGINE_VERSION },
-    meta: { consent_note: "Birth details are processed on request and are not stored." },
+    data: {
+      ...result,
+      interpretation: interpretSadeSati(result.in_sade_sati, result.phase, result.dhaiya_house),
+      engine_version: ENGINE_VERSION,
+    },
+    meta: CONSENT_META,
   });
 });
 
-/** GET /calculators/kaal-sarp — hemming check between Rahu and Ketu. */
+/** GET /calculators/kaal-sarp?birth= — hemming check with per-planet table. */
 calculatorsRoute.get("/calculators/kaal-sarp", (c) => {
   const birth = birthFromQuery(c);
   if (!birth.ok) return badRequest(c, birth.message);
   const input = kundliInput(birth);
   const positions = planetaryPositions(input);
   const asc = lagna(input);
+  const result = kaalSarp(positions, asc.lon);
   return c.json({
-    data: { ...kaalSarp(positions, asc.lon), engine_version: ENGINE_VERSION },
-    meta: { consent_note: "Birth details are processed on request and are not stored." },
+    data: {
+      ...result,
+      interpretation: interpretKaalSarp(result.present, result.type, result.rahu_house),
+      engine_version: ENGINE_VERSION,
+    },
+    meta: CONSENT_META,
   });
 });
 
-/** GET /calculators/karakas — Jaimini char karakas (Atmakaraka/Darakaraka…). */
+/** GET /calculators/mangal-dosha?birth=[&gender=] — Manglik check (raw + cancelled). */
+calculatorsRoute.get("/calculators/mangal-dosha", (c) => {
+  const birth = birthFromQuery(c);
+  if (!birth.ok) return badRequest(c, birth.message);
+  const gender = c.req.query("gender");
+  if (gender && !["male", "female", "other"].includes(gender)) {
+    return badRequest(c, "gender must be male, female or other (optional, informational)");
+  }
+  const result = manglik(kundliInput(birth));
+  return c.json({
+    data: {
+      ...result,
+      gender: gender ?? null,
+      interpretation: interpretManglik(
+        result.is_manglik,
+        result.cancelled,
+        result.cancellation_reason,
+      ),
+      engine_version: ENGINE_VERSION,
+    },
+    meta: CONSENT_META,
+  });
+});
+
+/** GET /calculators/karakas?birth= — Jaimini char karakas + scheme disclosure. */
 calculatorsRoute.get("/calculators/karakas", (c) => {
   const birth = birthFromQuery(c);
   if (!birth.ok) return badRequest(c, birth.message);
   const positions = planetaryPositions(kundliInput(birth));
+  const karakas = jaiminiKarakas(positions);
+  const atma = karakas.find((k) => k.is_atmakaraka) ?? null;
   return c.json({
-    data: { karakas: jaiminiKarakas(positions), engine_version: ENGINE_VERSION },
-    meta: { consent_note: "Birth details are processed on request and are not stored." },
+    data: {
+      scheme: KARAKA_SCHEME,
+      karakas,
+      atmakaraka: atma ? atma.planet : null,
+      interpretation: atma ? interpretAtmakaraka(atma.planet) : null,
+      engine_version: ENGINE_VERSION,
+    },
+    meta: CONSENT_META,
   });
 });
 
-/** GET /calculators/ishta-devata — Atmakaraka + navamsha sign (deity table P11). */
+/** GET /calculators/ishta-devata?birth= — deity via 12th-from-Karakamsha (P11). */
 calculatorsRoute.get("/calculators/ishta-devata", (c) => {
   const birth = birthFromQuery(c);
   if (!birth.ok) return badRequest(c, birth.message);
   const positions = planetaryPositions(kundliInput(birth));
+  const result = ishtaDevata(positions);
   return c.json({
-    data: { ...ishtaDevata(positions), engine_version: ENGINE_VERSION },
-    meta: { consent_note: "Birth details are processed on request and are not stored." },
+    data: {
+      ...result,
+      interpretation: interpretIshtaDevata(result.ishta_devata, result.derivation_source),
+      engine_version: ENGINE_VERSION,
+    },
+    meta: CONSENT_META,
   });
 });
 
-/** GET /calculators/moon-phase?date&[time=HH:MM] — phase, illumination, age, neighbour lunations. */
+/** GET /calculators/moon-phase?date&[time=HH:MM UTC] — phase, illumination, neighbours. */
 calculatorsRoute.get("/calculators/moon-phase", (c) => {
   const date = requireDate(c);
-  if (!date) return badRequest(c, "date must be YYYY-MM-DD");
-  if (!isCalendarDate(date)) return badRequest(c, "date is not a valid calendar date");
+  if (!date) return badRequest(c, "date must be a valid YYYY-MM-DD calendar date");
   const time = c.req.query("time") || "12:00";
-  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
-    return badRequest(c, "time must be HH:MM (24h, UTC)");
-  }
+  if (!TIME_Q_RE.test(time)) return badRequest(c, "time must be HH:MM (24h, UTC)");
   const instant = new Date(`${date}T${time}:00Z`);
   if (Number.isNaN(instant.getTime())) return badRequest(c, "Invalid date");
+  const result = moonPhaseDetails(instant);
   return c.json({
-    data: { ...moonPhaseDetails(instant), engine_version: ENGINE_VERSION },
+    data: {
+      ...result,
+      interpretation: interpretMoonPhase(result.phase),
+      engine_version: ENGINE_VERSION,
+    },
     meta: { note: "date and time are interpreted in UTC; time defaults to 12:00 UTC" },
   });
 });
 
-/** GET /calculators/sun-sign?date= — Western tropical sign + Vedic Surya Rashi (noon UTC). */
+/** GET /calculators/sun-sign?date=[&time&lat&lng&tz] — tropical + Vedic sun sign. */
 calculatorsRoute.get("/calculators/sun-sign", (c) => {
   const date = requireDate(c);
-  if (!date) return badRequest(c, "date must be YYYY-MM-DD");
-  if (!isCalendarDate(date)) return badRequest(c, "date is not a valid calendar date");
-  try {
-    return c.json({ data: { ...sunSignDetails(date), engine_version: ENGINE_VERSION } });
-  } catch {
-    return badRequest(c, "Invalid date");
+  if (!date) return badRequest(c, "date must be a valid YYYY-MM-DD calendar date");
+  const hasPlace =
+    c.req.query("lat") || c.req.query("lng") || c.req.query("tz") || c.req.query("time");
+  let instant: Date | undefined;
+  if (hasPlace) {
+    const birth = birthFromQuery(c);
+    if (!birth.ok) return badRequest(c, birth.message);
+    instant = birth.instant;
   }
-});
-
-/** GET /calculators/destiny-number?date= — Bhagyank + Mulank with planetary lords. */
-calculatorsRoute.get("/calculators/destiny-number", (c) => {
-  const date = requireDate(c);
-  if (!date) return badRequest(c, "date must be YYYY-MM-DD");
-  if (!isCalendarDate(date)) return badRequest(c, "date is not a valid calendar date");
-  return c.json({ data: { ...destinyNumber(date), engine_version: ENGINE_VERSION } });
-});
-
-// ---------------------------------------------------------------------------
-// Tier 2 (pure numerology / fun)
-// ---------------------------------------------------------------------------
-
-/** GET /calculators/numerology?date=&name= — Mulank/Destiny/Namank. */
-calculatorsRoute.get("/calculators/numerology", (c) => {
-  const date = requireDate(c);
-  if (!date) return badRequest(c, "date must be YYYY-MM-DD");
-  const name = c.req.query("name") ?? "";
-  const digits = date.replace(/\D/g, "").split("").map(Number);
-  const digitalRoot = (n: number): number =>
-    n > 9
-      ? digitalRoot(
-          String(n)
-            .split("")
-            .reduce((a, x) => a + Number(x), 0),
-        )
-      : n;
-  const mulank = digitalRoot(Number(date.slice(8, 10)));
-  const destiny = digitalRoot(digits.reduce((a, x) => a + x, 0));
-  const nn = nameNumerology(name);
+  const result = sunSignDetails(date, instant);
   return c.json({
     data: {
-      mulank,
-      destiny,
-      name_root: nn.root,
-      name_sum: nn.sum,
-      name_lord: nn.lord,
+      ...result,
+      interpretation: interpretSunSign(result.tropical_sign, result.element),
       engine_version: ENGINE_VERSION,
     },
   });
 });
 
-/** GET /calculators/name-compatibility?a=&b= (for fun). */
-calculatorsRoute.get("/calculators/name-compatibility", (c) => {
-  const a = c.req.query("a");
-  const b = c.req.query("b");
-  if (!a || !b) return badRequest(c, "a and b name parameters are required");
-  return c.json({
-    data: { ...nameCompatibility(a, b), for_fun: true, engine_version: ENGINE_VERSION },
-  });
-});
-
-/** GET /calculators/flames?a=&b= (for fun). */
-calculatorsRoute.get("/calculators/flames", (c) => {
-  const a = c.req.query("a");
-  const b = c.req.query("b");
-  if (!a || !b) return badRequest(c, "a and b name parameters are required");
-  return c.json({ data: { ...flames(a, b), for_fun: true, engine_version: ENGINE_VERSION } });
-});
-
-/** GET /calculators/love?a=&b= (for fun). */
-calculatorsRoute.get("/calculators/love", (c) => {
-  const a = c.req.query("a");
-  const b = c.req.query("b");
-  if (!a || !b) return badRequest(c, "a and b name parameters are required");
-  return c.json({
-    data: { ...loveCompatibility(a, b), for_fun: true, engine_version: ENGINE_VERSION },
-  });
-});
-
-/** GET /calculators/friendship?a=&b= (for fun). */
-calculatorsRoute.get("/calculators/friendship", (c) => {
-  const a = c.req.query("a");
-  const b = c.req.query("b");
-  if (!a || !b) return badRequest(c, "a and b name parameters are required");
-  return c.json({
-    data: { ...friendshipCompatibility(a, b), for_fun: true, engine_version: ENGINE_VERSION },
-  });
-});
-
-/** GET /calculators/lo-shu?date= — 3×3 grid from the birth date. */
-calculatorsRoute.get("/calculators/lo-shu", (c) => {
+/** GET /calculators/destiny-number?date= — Bhagyank + Mulank with lords. */
+calculatorsRoute.get("/calculators/destiny-number", (c) => {
   const date = requireDate(c);
-  if (!date) return badRequest(c, "date must be YYYY-MM-DD");
-  return c.json({ data: { ...loShuGrid(date), engine_version: ENGINE_VERSION } });
-});
-
-/** GET /calculators/vehicle-number?date= — lucky vehicle numbers. */
-calculatorsRoute.get("/calculators/vehicle-number", (c) => {
-  const date = requireDate(c);
-  if (!date) return badRequest(c, "date must be YYYY-MM-DD");
+  if (!date) return badRequest(c, "date must be a valid YYYY-MM-DD calendar date");
+  const result = destinyNumber(date);
   return c.json({
-    data: { ...vehicleLuckyNumber(date), verified: false, engine_version: ENGINE_VERSION },
+    data: {
+      ...result,
+      interpretation: interpretRoot(result.destiny, "Bhagyank"),
+      engine_version: ENGINE_VERSION,
+    },
   });
 });
 
-/** GET /calculators/mobile-numerology?digits= (for fun). */
-calculatorsRoute.get("/calculators/mobile-numerology", (c) => {
-  const digits = c.req.query("digits") ?? "";
-  if (!/\d{3,15}/.test(digits.replace(/\D/g, ""))) {
-    return badRequest(c, "digits must contain 3–15 numeric characters");
-  }
-  return c.json({
-    data: { ...mobileNumerology(digits), for_fun: true, engine_version: ENGINE_VERSION },
-  });
-});
-
-/** GET /calculators/name-numerology?name= — Chaldean name reading. */
-calculatorsRoute.get("/calculators/name-numerology", (c) => {
-  const name = c.req.query("name");
-  if (!name) return badRequest(c, "name parameter is required");
-  return c.json({ data: { ...nameNumerology(name), engine_version: ENGINE_VERSION } });
-});
-
-/** GET /calculators/age?date=&now= — exact age (now defaults to today UTC). */
-calculatorsRoute.get("/calculators/age", (c) => {
-  const date = requireDate(c);
-  if (!date) return badRequest(c, "date must be YYYY-MM-DD");
-  const now = c.req.query("now") ?? new Date().toISOString().slice(0, 10);
-  if (!DATE_Q_RE.test(now)) return badRequest(c, "now must be YYYY-MM-DD");
-  try {
-    return c.json({ data: { ...ageOn(date, now), engine_version: ENGINE_VERSION } });
-  } catch {
-    return badRequest(c, "Invalid date");
-  }
-});
+// ---------------------------------------------------------------------------
+// Transits (no birth needed beyond place)
+// ---------------------------------------------------------------------------
 
 /** GET /calculators/transits?lat&lng&tz — planetary positions right now. */
 calculatorsRoute.get("/calculators/transits", (c) => {
@@ -302,12 +339,17 @@ calculatorsRoute.get("/calculators/transits", (c) => {
   if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
     return badRequest(c, "lng must be a number in [-180,180]");
   }
-  const input = { datetime: new Date(), latitude: lat, longitude: lng };
+  const now = new Date();
+  const input = { datetime: now, latitude: lat, longitude: lng };
+  const grahas = planetaryPositions(input).map((g) => ({
+    ...g,
+    degree_in_sign: Math.round((((g.lon % 30) + 30) % 30) * 100) / 100,
+  }));
   return c.json({
     data: {
-      as_of: new Date().toISOString(),
+      as_of: now.toISOString(),
       timezone: tz,
-      grahas: planetaryPositions(input),
+      grahas,
       engine_version: ENGINE_VERSION,
     },
     meta: { cache: "short-lived; positions move continuously" },

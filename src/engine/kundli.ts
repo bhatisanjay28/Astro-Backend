@@ -7,7 +7,7 @@ import { ascendantSidereal } from "./ascendant";
 import { lahiriAyanamsha } from "./ayanamsha";
 import { moonSiderealLon, sunSiderealLon } from "./bodies";
 import { NAKSHATRAS } from "./names";
-import { ketuMeanLon, rahuMeanLon } from "./nodes";
+import { ketuSiderealLon, rahuSiderealLon } from "./nodes";
 
 const SIGNS = [
   "Aries",
@@ -133,8 +133,8 @@ export function planetaryPositions(input: KundliInput): PlanetPosition[] {
       siderealBody(Astronomy.Body.Saturn, datetime),
       isRetrograde(Astronomy.Body.Saturn, datetime),
     ],
-    ["Rahu", rahuMeanLon(datetime), true],
-    ["Ketu", ketuMeanLon(datetime), true], // nodes are always retrograde
+    ["Rahu", rahuSiderealLon(datetime), true],
+    ["Ketu", ketuSiderealLon(datetime), true], // nodes are always retrograde
   ];
 
   return entries.map(([planet, lon, retrograde]) => {
