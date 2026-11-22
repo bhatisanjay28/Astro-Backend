@@ -5,10 +5,10 @@
  * Read-only, cache-friendly GETs with NO personal data submitted (no birth
  * details — no-PII by construction). Pair results are symmetric: (a, b)
  * canonicalises to one record per unordered pair (78 unique covering all 144
- * ordered lookups). Every verdict carries `verified: false` pending Jyotishi
- * review (P11) — the method is interpretive, not scientific. Editorial
- * content lives with the engine (D12); this route only validates and
- * assembles.
+ * ordered lookups). Content SIGNED OFF by the owner 2026-11-22 →
+ * `verified: true` (this set only; other P11 engines keep their own flag) —
+ * the method framing + guidance disclaimer stay. Editorial content lives
+ * with the engine (D12); this route only validates and assembles.
  */
 import { Hono } from "hono";
 import {

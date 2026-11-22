@@ -274,7 +274,7 @@ describe("sign-compatibility content pipeline (red until Epic ZC content lands)"
     const result = signPairResult("aries", "leo");
     expect(result.pair).toBe("aries-leo");
     expect(result.requested).toEqual({ sign1: "aries", sign2: "leo" });
-    expect(result.verified).toBe(false);
+    expect(result.verified).toBe(true); // content signed off 2026-11-22
     expect(result.categories.length).toBe(6);
     expect(result.categories.map((cat) => cat.key)).toEqual([
       "love",

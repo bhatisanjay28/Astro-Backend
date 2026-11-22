@@ -15,9 +15,10 @@
  * per §6.7). Tests assert the formula-derived distribution (Excellent 10 /
  * Strong 26 / Mixed 6 / Challenging 33 / Very challenging 3).
  *
- * Interpretive tradition, not a scientific measure — every verdict carries
- * verified:false (P11 register, same policy as Ashtakoota matching). Vedic
- * Graha Maitri is deliberately NOT mixed in (research §2.5); cross-link to
+ * Interpretive tradition, not a scientific measure. Content SIGNED OFF by the
+ * owner 2026-11-22 → verified:true (the P11-class gate for this set; Ashtakoota
+ * matching/muhurat/transits keep their own verified:false pending their review).
+ * Vedic Graha Maitri is deliberately NOT mixed in (research §2.5); cross-link to
  * /matching for the Vedic method instead.
  *
  * Symmetry: pair(A,B) ≡ pair(B,A) by construction — one canonical record per
@@ -543,7 +544,8 @@ export interface SignPairResult {
   tips: string[];
   disclaimer: string;
   method_note: string;
-  verified: false;
+  /** Content sign-off: owner approved the 78-record set 2026-11-22 (P11-class). */
+  verified: boolean;
 }
 
 export class UnknownSignError extends Error {
@@ -589,7 +591,9 @@ export function signPairResult(sign1: string, sign2: string): SignPairResult {
     tips: content.tips,
     disclaimer: COMPATIBILITY_DISCLAIMER,
     method_note: COMPATIBILITY_METHOD_NOTE,
-    verified: false,
+    // Owner content sign-off 2026-11-22 — the "interpretive method" UI tag
+    // renders only while this is false. Method framing/disclaimer stay.
+    verified: true,
   };
 }
 

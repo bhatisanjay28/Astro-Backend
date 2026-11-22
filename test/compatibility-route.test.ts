@@ -100,7 +100,7 @@ describe("GET /api/v1/compatibility/signs/pair", () => {
     expect(status).toBe(200);
     const pair = json.data;
     expect(pair?.pair).toBe("aries-leo");
-    expect(pair?.verified).toBe(false);
+    expect(pair?.verified).toBe(true); // content signed off 2026-11-22
     expect(pair?.overall.score).toBe(91);
     expect(pair?.overall.band).toBe("Excellent");
     expect(pair?.categories.length).toBe(6);
