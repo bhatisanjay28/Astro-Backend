@@ -51,6 +51,13 @@ export function validateBirth(raw: Record<string, unknown> | undefined): BirthVa
   if (!isCalendarDate(date)) {
     return { ok: false, message: "date is not a valid calendar date" };
   }
+  // S18 (owner spec): a birth chart needs a past date — reject future births
+  // (UTC-date compare; ISO strings compare lexicographically). Today itself
+  // is valid (someone born earlier today).
+  const todayISO = new Date().toISOString().slice(0, 10);
+  if (date > todayISO) {
+    return { ok: false, message: "date must not be in the future — a birth chart needs a past date" };
+  }
   if (typeof lat !== "number" || !Number.isFinite(lat) || lat < -90 || lat > 90) {
     return { ok: false, message: "lat must be a number in [-90,90]" };
   }

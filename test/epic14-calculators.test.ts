@@ -97,6 +97,22 @@ describe("QB-01 birth-instant solver", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.message).toContain("calendar date");
   });
+
+  test("S18: future birth dates are rejected with a clear message", () => {
+    const far = validateBirth({
+      date: "2099-01-01",
+      time: "10:00",
+      lat: 28.6,
+      lng: 77.2,
+      tz: "Asia/Kolkata",
+    });
+    expect(far.ok).toBe(false);
+    if (!far.ok) expect(far.message).toContain("future");
+    // today itself stays valid (someone born earlier today)
+    const today = new Date().toISOString().slice(0, 10);
+    const nowOk = validateBirth({ date: today, time: "00:30", lat: 28.6, lng: 77.2, tz: "Asia/Kolkata" });
+    expect(nowOk.ok).toBe(true);
+  });
 });
 
 describe("QB-02 sidereal lunar nodes", () => {
