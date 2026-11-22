@@ -42,6 +42,7 @@ export const v1Route = new Hono<AppEnv>().get("/", (c) =>
         "GET /api/v1/calculators/{rashi|sade-sati|kaal-sarp|karakas|ishta-devata|numerology|name-compatibility|flames|love|friendship|lo-shu|vehicle-number|mobile-numerology|name-numerology|age|transits} (Epic 4.4/4.6)",
         "GET /api/v1/astrologers (+/{slug}), GET /api/v1/pujas (+/{slug}, ?category=) — Epic 5.2/5.3 directories",
         "POST /api/v1/requests/consultation, POST /api/v1/requests/puja — booking requests (Epic 5.2/5.3)",
+        "GET /api/v1/compatibility/signs (+/pair?sign1=&sign2=) — Western sun-sign compatibility, 78 canonical pairs / 144 ordered lookups (Epic ZC)",
       ],
     },
   }),
