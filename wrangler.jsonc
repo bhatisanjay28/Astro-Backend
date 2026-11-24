@@ -12,8 +12,11 @@
     "ENV": "development"
   },
   "triggers": {
-    // daily panchang cache warm + prune (Epic 3.1b) — 00:15 UTC
-    "crons": ["15 0 * * *"]
+    // 18:35 UTC ≈ 00:05 IST — daily horoscope generation for the new IST day
+    //   (Horoscope Upgrade Step 4; runs are idempotent).
+    // 00:15 UTC (05:45 IST) — daily panchang cache warm + prune (Epic 3.1b);
+    //   the scheduled handler runs both jobs on every trigger, both idempotent,
+    //   so the second firing of each is a cheap no-op refresh.
+    "crons": ["35 18 * * *", "15 0 * * *"]
   }
-  // ^ Cron Triggers land with 3.1b; horoscope refresh stays lazy (sweep on read).
 }

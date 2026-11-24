@@ -1,15 +1,32 @@
 import app from "./app";
-import { warmPanchangCache } from "./cron";
+import { runHoroscopeGeneration, warmPanchangCache } from "./cron";
 
 /**
  * Worker entry point (production: `wrangler deploy`).
  * The Hono app's fetch handler is the Worker fetch export; the cron trigger
- * (wrangler.jsonc) warms/prunes the panchang cache daily (Epic 3.1b).
+ * (wrangler.jsonc) warms/prunes the panchang cache daily (Epic 3.1b) and then
+ * generates/validates/publishes horoscope rows (Horoscope Upgrade Step 4).
  */
 export default {
   fetch: app.fetch,
-  scheduled: (event: unknown, env: unknown) => {
-    void warmPanchangCache(env as never).catch((err) => console.error("[cron] failed:", err));
+  // ctx.waitUntil keeps the isolate alive until the async work settles —
+  // returning before that lets Cloudflare kill a mid-run generation
+  // (the horoscope pass composes ~800 ephemeris snapshots).
+  scheduled: (
+    event: unknown,
+    env: unknown,
+    ctx: { waitUntil: (promise: Promise<unknown>) => void },
+  ) => {
+    ctx.waitUntil(
+      (async () => {
+        await warmPanchangCache(env as never).catch((err) =>
+          console.error("[cron] panchang warm failed:", err),
+        );
+        await runHoroscopeGeneration(env as never).catch((err) =>
+          console.error("[cron] horoscope generation failed:", err),
+        );
+      })(),
+    );
   },
 };
 

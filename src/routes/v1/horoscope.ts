@@ -1,36 +1,45 @@
 /**
- * GET /api/v1/horoscope — 12-sign rashiphal (Epic 5.1 minimal for the home
- * design's horoscope grid; PRD §5.2).
+ * GET /api/v1/horoscope — 12-sign rashiphal (Horoscope Upgrade Step 4).
  *
- * Content lives in the `horoscopes` table (admin-editable, PRD §5.2/§7) and is
- * read server-side with the service-role key (D3: no client DB access).
- * `date_key = 'rolling'` rows are evergreen daily content; dated rows land
- * with the admin scheduler (6.4).
+ * Resolve-current mode: the visitor asks for a period tab; the API resolves it
+ * to the IST-dated row the generator maintains (fixed +05:30 offset — date
+ * keys never come from toISOString):
+ *   yesterday → daily row @ D-1    daily → daily row @ D    tomorrow → daily row @ D+1
+ *   weekly    → current Monday     monthly → YYYY-MM        yearly  → YYYY
+ *
+ * Each sign row carries the legacy five text columns (home-grid contract,
+ * unchanged) plus the generated structured `payload` (chips, areas, lucky,
+ * sky, month table…) when present. Fixed page strings (disclaimer, rating
+ * labels, lucky "why" templates…) ship in `blocks` from content_blocks —
+ * D12: content lives behind the API, not in code.
+ *
+ * Fallback ladder per period: dated row → legacy `date_key=rolling` row →
+ * empty `signs: []` (UI renders its built-in sample lines; honest empty).
  *
  * Query: ?period=daily|yesterday|tomorrow|weekly|monthly|yearly (default daily)
  *        ?lang=en|hi (default en)
  *        ?sign=aries..pisces (optional single-sign filter)
- *
- * Empty result set → 200 with `signs: []` (the UI falls back to its built-in
- * sample lines, same as the seed content).
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../env";
+import type { HoroscopePayload } from "../../horoscope/compose";
+import { addDays, istDateKey, periodDateKey } from "../../horoscope/ist";
+import { HOROSCOPE_SIGNS } from "../../horoscope/rules";
+import { rest, type SupabaseCreds } from "../../lib/supabase";
 
 const PERIODS = ["yesterday", "daily", "tomorrow", "weekly", "monthly", "yearly"] as const;
-const SIGNS = [
-  "aries",
-  "taurus",
-  "gemini",
-  "cancer",
-  "leo",
-  "virgo",
-  "libra",
-  "scorpio",
-  "sagittarius",
-  "capricorn",
-  "aquarius",
-  "pisces",
+type RequestedPeriod = (typeof PERIODS)[number];
+
+const BLOCK_KEYS = [
+  "horoscope.disclaimer",
+  "horoscope.disclosure",
+  "horoscope.rating_labels",
+  "horoscope.lucky_why",
+  "horoscope.sadesati_note",
+  "horoscope.chandrashtama_tag",
+  "horoscope.headers",
+  "horoscope.area_names",
+  "horoscope.month_clause_intro",
 ] as const;
 
 function badRequest(c: any, message: string, details?: unknown) {
@@ -50,11 +59,46 @@ function serviceUnavailable(c: any) {
   );
 }
 
+interface HoroscopeRow {
+  sign: string;
+  period: string;
+  date_key: string;
+  overview: string | null;
+  love: string | null;
+  career: string | null;
+  finance: string | null;
+  health: string | null;
+  is_sample: boolean;
+  payload: HoroscopePayload | null;
+}
+
+/** IST resolve-current mapping: requested tab → (generator period, date_key). */
+export function resolveCurrent(
+  requested: RequestedPeriod,
+  now: Date,
+): { period: "daily" | "weekly" | "monthly" | "yearly"; dateKey: string } {
+  const today = istDateKey(now);
+  switch (requested) {
+    case "yesterday":
+      return { period: "daily", dateKey: addDays(today, -1) };
+    case "tomorrow":
+      return { period: "daily", dateKey: addDays(today, 1) };
+    case "weekly":
+      return { period: "weekly", dateKey: periodDateKey("weekly", now) };
+    case "monthly":
+      return { period: "monthly", dateKey: periodDateKey("monthly", now) };
+    case "yearly":
+      return { period: "yearly", dateKey: periodDateKey("yearly", now) };
+    default:
+      return { period: "daily", dateKey: today };
+  }
+}
+
 export const horoscopeRoute = new Hono<AppEnv>();
 
 horoscopeRoute.get("/horoscope", async (c) => {
   const q = c.req.query();
-  const period = q.period ?? "daily";
+  const period = (q.period ?? "daily") as RequestedPeriod;
   const lang = q.lang ?? "en";
   const sign = q.sign;
 
@@ -64,58 +108,83 @@ horoscopeRoute.get("/horoscope", async (c) => {
   if (!["en", "hi"].includes(lang)) {
     return badRequest(c, "lang must be en or hi", { received: lang });
   }
-  if (sign !== undefined && !(SIGNS as readonly string[]).includes(sign)) {
-    return badRequest(c, `sign must be one of: ${SIGNS.join(", ")}`, { received: sign });
+  if (sign !== undefined && !(HOROSCOPE_SIGNS as readonly string[]).includes(sign)) {
+    return badRequest(c, `sign must be one of: ${HOROSCOPE_SIGNS.join(", ")}`, { received: sign });
   }
 
   const supabaseUrl = c.env?.SUPABASE_URL;
   const serviceKey = c.env?.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) return serviceUnavailable(c);
+  const creds: SupabaseCreds = { url: supabaseUrl, key: serviceKey };
 
-  const params = new URLSearchParams({
-    period: `eq.${period}`,
-    lang: `eq.${lang}`,
-    status: "eq.published",
-    date_key: "eq.rolling",
-    select: "sign,overview,love,career,finance,health,is_sample",
-    order: "sign.asc",
-  });
-  if (sign) params.set("sign", `eq.${sign}`);
+  const { period: resolvedPeriod, dateKey } = resolveCurrent(period, new Date());
 
-  let res: Response;
-  try {
-    res = await fetch(`${supabaseUrl}/rest/v1/horoscopes?${params.toString()}`, {
-      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+  // ladder: dated generator row → legacy rolling row → empty
+  const fetchRows = async (p: string, dk: string): Promise<HoroscopeRow[]> => {
+    const params = new URLSearchParams({
+      period: `eq.${p}`,
+      lang: `eq.${lang}`,
+      status: "eq.published",
+      date_key: `eq.${dk}`,
+      select: "sign,period,date_key,overview,love,career,finance,health,is_sample,payload",
+      order: "sign.asc",
     });
+    if (sign) params.set("sign", `eq.${sign}`);
+    const res = await rest(creds, `horoscopes?${params.toString()}`);
+    if (!res.ok) throw new Error(`content lookup failed: ${res.status}`);
+    return (await res.json()) as HoroscopeRow[];
+  };
+
+  let rows: HoroscopeRow[];
+  try {
+    rows = await fetchRows(resolvedPeriod, dateKey);
+    // Legacy rolling rows exist for period='daily' only (migration 0003 seed),
+    // so every tab falls back to that same batch.
+    if (rows.length === 0) rows = await fetchRows("daily", "rolling");
   } catch {
     return c.json({ error: { code: "internal_error", message: "Content lookup failed" } }, 500);
   }
-  if (!res.ok) {
-    return c.json({ error: { code: "internal_error", message: "Content lookup failed" } }, 500);
+
+  // fixed page strings for this lang (fail-soft: missing blocks → absent keys)
+  let blocks: Record<string, unknown> = {};
+  try {
+    const params = new URLSearchParams({
+      block_key: `in.(${BLOCK_KEYS.join(",")})`,
+      lang: `eq.${lang}`,
+      status: "eq.published",
+      select: "block_key,payload",
+    });
+    const res = await rest(creds, `content_blocks?${params.toString()}`);
+    if (res.ok) {
+      const blockRows = (await res.json()) as Array<{ block_key: string; payload: unknown }>;
+      blocks = Object.fromEntries(
+        blockRows.map((b) => [b.block_key.replace("horoscope.", ""), b.payload]),
+      );
+    }
+  } catch {
+    // blocks are enhancement chrome — a lookup miss must not fail the payload
   }
 
-  const rows = (await res.json()) as Array<{
-    sign: string;
-    overview: string | null;
-    love: string | null;
-    career: string | null;
-    finance: string | null;
-    health: string | null;
-    is_sample: boolean;
-  }>;
-
+  const payloadRows = rows.filter((r) => r.payload);
   return c.json({
     data: {
       period,
+      resolved_period: resolvedPeriod,
+      date_key: dateKey,
       lang,
+      range: payloadRows[0]?.payload?.range ?? null,
+      blocks,
       signs: rows.map((r) => ({
         sign: r.sign,
-        overview: r.overview ?? "",
+        // legacy five-line contract (home grid) — unchanged shape
+        overview: r.payload?.overview?.text ?? r.overview ?? "",
         love: r.love ?? "",
         career: r.career ?? "",
         finance: r.finance ?? "",
         health: r.health ?? "",
         is_sample: r.is_sample,
+        has_payload: !!r.payload,
+        payload: r.payload ?? null,
       })),
     },
   });

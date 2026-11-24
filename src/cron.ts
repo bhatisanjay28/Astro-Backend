@@ -3,14 +3,27 @@
  * (all cities) and prune stale rows. Runs ~00:15 UTC daily; also safe to
  * invoke manually. Failures are logged, never thrown — a missed warm is
  * healed by the write-through on first request.
+ *
+ * Horoscope Upgrade Step 4 — the same trigger then generates/refreshes
+ * horoscope rows (12 signs × 2 langs × daily buffer + weekly/monthly/yearly
+ * windows). Generation is deterministic and validates before publishing;
+ * failures land in horoscope_run_log and never throw.
  */
 import { computePanchang } from "./engine";
+import { generateHoroscopes } from "./horoscope/generate";
 import { prunePanchangCache, storePanchang } from "./lib/panchang-cache";
 import { rest, type SupabaseCreds } from "./lib/supabase";
 
 interface CronEnv {
   SUPABASE_URL?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
+  /**
+   * Optional CF Pages deploy hook — when set, a successful horoscope run
+   * pings it so the static frontend rebuilds and re-bakes the fresh dated
+   * rows (build-time SSR). Unset → ping skipped (frontend refreshes on the
+   * next push-triggered deploy).
+   */
+  FRONTEND_DEPLOY_HOOK_URL?: string;
 }
 
 export async function warmPanchangCache(env: CronEnv): Promise<void> {
@@ -63,4 +76,33 @@ export async function warmPanchangCache(env: CronEnv): Promise<void> {
   console.log(
     `[cron] panchang warm: ${warmed}/${cities.length} cities for ${today}; prune ${pruned ? "ok" : "failed"}`,
   );
+}
+
+/**
+ * Ping the CF Pages deploy hook so the static frontend rebuilds with the
+ * fresh rows (build-time SSR re-bake). Fire-and-forget: a hook failure is
+ * logged, never thrown — the next push-triggered deploy catches up.
+ */
+async function pingFrontendDeployHook(url: string, published: number): Promise<void> {
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ horoscope: { published } }),
+    });
+    console.log(`[cron] frontend deploy hook pinged: ${res.status}`);
+  } catch (err) {
+    console.error("[cron] frontend deploy hook ping failed:", err);
+  }
+}
+
+/** Horoscope Upgrade Step 4 — generate + validate + publish horoscope rows. */
+export async function runHoroscopeGeneration(env: CronEnv): Promise<void> {
+  const result = await generateHoroscopes(env);
+  console.log(
+    `[cron] horoscope generation: ${result.status}, ${result.published} rows, ${result.violations.length} violations, ${result.durationMs}ms`,
+  );
+  if (env.FRONTEND_DEPLOY_HOOK_URL && result.published > 0) {
+    await pingFrontendDeployHook(env.FRONTEND_DEPLOY_HOOK_URL, result.published);
+  }
 }
