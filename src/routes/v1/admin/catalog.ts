@@ -6,6 +6,7 @@
  */
 import { Hono } from "hono";
 import type { AppEnvWithAdmin } from "../../../env";
+import { writeAudit } from "../../../lib/audit";
 import { SLUG_RE, slugify } from "../../../lib/posts";
 import { rest, type SupabaseCreds, supabaseCreds } from "../../../lib/supabase";
 
@@ -154,6 +155,18 @@ adminCatalogRoute.post("/admin/astrologers", async (c) => {
     return c.json({ error: { code: "internal_error", message: "Astrologer create failed" } }, 500);
   }
   const rows = (await res.json()) as Array<Record<string, unknown>>;
+  const admin = c.get("admin");
+  await writeAudit(creds0, {
+    actor: admin.userId,
+    action: "astrologers.create",
+    entity: "astrologers",
+    entity_id: typeof rows[0]?.id === "string" ? (rows[0]?.id as string) : null,
+    details: {
+      slug,
+      name: name.slice(0, 120),
+      ...(typeof input.about === "string" ? { about: `${input.about.length} chars` } : {}),
+    },
+  });
   return c.json({ data: rows[0] ?? null }, 201);
 });
 
@@ -179,6 +192,16 @@ adminCatalogRoute.patch("/admin/astrologers/:id", async (c) => {
   const rows = (await res.json()) as Array<Record<string, unknown>>;
   if (rows.length === 0)
     return c.json({ error: { code: "not_found", message: "Astrologer not found" } }, 404);
+  const admin = c.get("admin");
+  const details: Record<string, unknown> = { fields: Object.keys(input) };
+  if (typeof input.about === "string") details.about = `${input.about.length} chars`;
+  await writeAudit(creds0, {
+    actor: admin.userId,
+    action: "astrologers.update",
+    entity: "astrologers",
+    entity_id: c.req.param("id"),
+    details,
+  });
   return c.json({ data: rows[0] });
 });
 
@@ -194,6 +217,13 @@ adminCatalogRoute.delete("/admin/astrologers/:id", async (c) => {
   const rows = (await res.json()) as unknown[];
   if (rows.length === 0)
     return c.json({ error: { code: "not_found", message: "Astrologer not found" } }, 404);
+  const admin = c.get("admin");
+  await writeAudit(creds0, {
+    actor: admin.userId,
+    action: "astrologers.delete",
+    entity: "astrologers",
+    entity_id: c.req.param("id"),
+  });
   return c.json({ data: { deleted: true } });
 });
 
@@ -272,6 +302,21 @@ adminCatalogRoute.post("/admin/pujas", async (c) => {
     return c.json({ error: { code: "internal_error", message: "Puja create failed" } }, 500);
   }
   const rows = (await res.json()) as Array<Record<string, unknown>>;
+  const admin = c.get("admin");
+  await writeAudit(creds0, {
+    actor: admin.userId,
+    action: "pujas.create",
+    entity: "pujas",
+    entity_id: typeof rows[0]?.id === "string" ? (rows[0]?.id as string) : null,
+    details: {
+      slug,
+      name: name.slice(0, 120),
+      ...(input.category !== undefined ? { category: String(input.category) } : {}),
+      ...(typeof input.description === "string"
+        ? { description: `${input.description.length} chars` }
+        : {}),
+    },
+  });
   return c.json({ data: rows[0] ?? null }, 201);
 });
 
@@ -297,6 +342,17 @@ adminCatalogRoute.patch("/admin/pujas/:id", async (c) => {
   const rows = (await res.json()) as Array<Record<string, unknown>>;
   if (rows.length === 0)
     return c.json({ error: { code: "not_found", message: "Puja not found" } }, 404);
+  const admin = c.get("admin");
+  const details: Record<string, unknown> = { fields: Object.keys(input) };
+  if (typeof input.description === "string")
+    details.description = `${input.description.length} chars`;
+  await writeAudit(creds0, {
+    actor: admin.userId,
+    action: "pujas.update",
+    entity: "pujas",
+    entity_id: c.req.param("id"),
+    details,
+  });
   return c.json({ data: rows[0] });
 });
 
@@ -312,5 +368,12 @@ adminCatalogRoute.delete("/admin/pujas/:id", async (c) => {
   const rows = (await res.json()) as unknown[];
   if (rows.length === 0)
     return c.json({ error: { code: "not_found", message: "Puja not found" } }, 404);
+  const admin = c.get("admin");
+  await writeAudit(creds0, {
+    actor: admin.userId,
+    action: "pujas.delete",
+    entity: "pujas",
+    entity_id: c.req.param("id"),
+  });
   return c.json({ data: { deleted: true } });
 });

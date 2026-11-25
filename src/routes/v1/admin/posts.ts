@@ -9,6 +9,7 @@
  */
 import { Hono } from "hono";
 import type { AppEnvWithAdmin } from "../../../env";
+import { writeAudit } from "../../../lib/audit";
 import {
   canTransition,
   type PostStatus,
@@ -280,6 +281,20 @@ adminPostsRoute.post("/admin/posts", async (c) => {
   if (Array.isArray(f.tags) && f.tags.length > 0) {
     await applyTags(creds, created.id, f.tags as string[]);
   }
+  const admin = c.get("admin");
+  await writeAudit(creds, {
+    actor: admin.userId,
+    action: "blog_posts.create",
+    entity: "blog_posts",
+    entity_id: created.id,
+    details: {
+      slug,
+      title: String(f.title ?? "").slice(0, 120),
+      status: f.status,
+      content_md: `${String(f.content_md ?? "").length} chars`,
+      ...(Array.isArray(f.tags) ? { tags: f.tags.length } : {}),
+    },
+  });
   return c.json({ data: { ...created } }, 201);
 });
 
@@ -393,6 +408,21 @@ adminPostsRoute.put("/admin/posts/:id", async (c) => {
   if (Array.isArray(f.tags)) {
     await applyTags(creds, id, f.tags as string[]);
   }
+  const admin = c.get("admin");
+  await writeAudit(creds, {
+    actor: admin.userId,
+    action: "blog_posts.update",
+    entity: "blog_posts",
+    entity_id: id,
+    details: {
+      fields: Object.keys(patch).filter((k) => k !== "updated_at"),
+      ...(patch.slug !== undefined ? { slug: patch.slug } : {}),
+      ...(f.title !== undefined ? { title: String(f.title).slice(0, 120) } : {}),
+      ...(f.status !== undefined ? { status: f.status, prev_status: prev.status } : {}),
+      ...(f.content_md !== undefined ? { content_md: `${String(f.content_md).length} chars` } : {}),
+      ...(Array.isArray(f.tags) ? { tags: f.tags.length } : {}),
+    },
+  });
   return c.json({ data: updatedRows[0] ?? {} });
 });
 
@@ -423,5 +453,12 @@ adminPostsRoute.delete("/admin/posts/:id", async (c) => {
   }
   const rows = (await res.json()) as unknown[];
   if (rows.length === 0) return notFound(c);
+  const admin = c.get("admin");
+  await writeAudit(creds, {
+    actor: admin.userId,
+    action: "blog_posts.trash",
+    entity: "blog_posts",
+    entity_id: id,
+  });
   return c.json({ data: { id, deleted: true } });
 });

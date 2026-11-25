@@ -4,10 +4,16 @@
  * here; the returned Supabase access token is then presented to /admin/*,
  * where requireAdmin checks identity + role (Epic 6.1).
  *
+ * Admin Phase 1: login success/failure and logout are written to the audit
+ * trail; POST /auth/logout revokes the session server-side (the old panel
+ * only dropped the client-side token, leaving the session live).
+ *
  * Only the fields the UI needs leave the proxy — no Supabase envelope leakage.
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../env";
+import { decodeJwtPayload } from "../../lib/admin-auth";
+import { writeAudit } from "../../lib/audit";
 
 type Env = AppEnv;
 
@@ -64,11 +70,24 @@ authRoute.post("/auth/login", async (c) => {
   const res = await grant(creds0.url, creds0.key, { email: body.email, password: body.password });
   const data = (await res.json().catch(() => ({}))) as SupabaseAuthResponse;
   if (!res.ok || !data.access_token) {
+    await writeAudit(creds0, {
+      actor: null,
+      action: "auth.login_failed",
+      entity: "auth",
+      details: { email: body.email },
+    });
     return c.json(
       { error: { code: "invalid_credentials", message: "Invalid email or password" } },
       401,
     );
   }
+  await writeAudit(creds0, {
+    actor: data.user?.id ?? null,
+    action: "auth.login",
+    entity: "auth",
+    entity_id: data.user?.id ?? null,
+    details: { email: body.email },
+  });
   return c.json({
     data: {
       access_token: data.access_token,
@@ -77,6 +96,54 @@ authRoute.post("/auth/login", async (c) => {
       user: { id: data.user?.id ?? null, email: data.user?.email ?? body.email },
     },
   });
+});
+
+/**
+ * Logout proxy: revokes the Supabase session (refresh tokens) server-side.
+ * Body: { access_token } — the token to revoke. Idempotent: an already
+ * expired token still answers ok so the UI can always sign out.
+ */
+authRoute.post("/auth/logout", async (c) => {
+  const creds0 = creds(c);
+  if (!creds0) {
+    return c.json(
+      { error: { code: "service_unavailable", message: "Auth requires backend credentials." } },
+      503,
+    );
+  }
+  const body = (await c.req.json().catch(() => ({}))) as { access_token?: unknown };
+  const token = typeof body.access_token === "string" ? body.access_token.trim() : "";
+  if (!token) {
+    return c.json(
+      { error: { code: "validation_error", message: "access_token is required" } },
+      400,
+    );
+  }
+  const res = await fetch(`${creds0.url}/auth/v1/logout?scope=global`, {
+    method: "POST",
+    headers: { apikey: creds0.key, Authorization: `Bearer ${token}` },
+  });
+  if (res.ok || res.status === 401) {
+    // 401 = token already invalid — signing out an expired session is fine.
+    // Audit ONLY when Supabase validated the token: decoding the sub of an
+    // *unverified* token would let anyone fabricate audit rows attributed to
+    // any admin (pre-commit review P1 — audit-trail poisoning).
+    if (res.ok) {
+      const claims = decodeJwtPayload(token) as { sub?: unknown } | null;
+      const actor = typeof claims?.sub === "string" ? claims.sub : null;
+      await writeAudit(creds0, {
+        actor,
+        action: "auth.logout",
+        entity: "auth",
+        entity_id: actor,
+      });
+    }
+    return c.json({ data: { ok: true } });
+  }
+  return c.json(
+    { error: { code: "upstream_error", message: "Sign-out failed — try again." } },
+    502,
+  );
 });
 
 authRoute.post("/auth/refresh", async (c) => {

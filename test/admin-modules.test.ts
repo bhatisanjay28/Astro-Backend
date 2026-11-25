@@ -313,9 +313,28 @@ describe("admin inboxes (requests + messages)", () => {
     expect(res.status).toBe(400);
   });
 
-  it("patches a request status to scheduled", async () => {
+  it("patches a request status to scheduled (workflow map: new → scheduled)", async () => {
     let seen: Record<string, unknown> | undefined;
     mockSupabase((url, init) => {
+      // Phase 2 PATCH flow first reads the current row for the transition map
+      // (restList sends no explicit method — GET is implicit)
+      if (
+        url.includes("/rest/v1/puja_requests?id=eq.r9&select=") &&
+        (init?.method ?? "GET") === "GET"
+      ) {
+        return json([
+          {
+            id: "r9",
+            status: "new",
+            verified_at: null,
+            scheduled_for: null,
+            assignee_id: null,
+            is_test: false,
+            archived_at: null,
+            closed_at: null,
+          },
+        ]);
+      }
       if (url.includes("/rest/v1/puja_requests?id=eq.r9") && init?.method === "PATCH") {
         seen = JSON.parse(init.body as string) as Record<string, unknown>;
         return json([{ id: "r9", status: "scheduled" }]);
@@ -333,6 +352,12 @@ describe("admin inboxes (requests + messages)", () => {
 
   it("patches a contact message to closed", async () => {
     mockSupabase((url, init) => {
+      if (
+        url.includes("/rest/v1/contact_messages?id=eq.m1&select=") &&
+        (init?.method ?? "GET") === "GET"
+      ) {
+        return json([{ id: "m1", status: "new", is_test: false, archived_at: null }]);
+      }
       if (url.includes("/rest/v1/contact_messages?id=eq.m1") && init?.method === "PATCH") {
         return json([{ id: "m1", status: "closed" }]);
       }

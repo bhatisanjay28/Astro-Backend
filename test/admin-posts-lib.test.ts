@@ -1,5 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { canTransition, readingMinutes, slugify, validatePostInput } from "../src/lib/posts";
+import {
+  canTransition,
+  readingMinutes,
+  sanitizeMarkdown,
+  slugify,
+  validatePostInput,
+} from "../src/lib/posts";
 
 /** QA-mindset: boundaries (empty/zero/one/many), malformed input, transitions. */
 
@@ -120,5 +126,55 @@ describe("canTransition", () => {
     expect(canTransition("published", "archived")).toBe(true);
     expect(canTransition("archived", "published")).toBe(true);
     expect(canTransition("archived", "draft")).toBe(false);
+  });
+});
+
+describe("sanitizeMarkdown (save-time scrub — owner brief)", () => {
+  it("strips scriptable tags outright", () => {
+    expect(sanitizeMarkdown("hello <script>alert(1)</script> world")).toBe("hello  world");
+    expect(sanitizeMarkdown('<iframe src="https://x.example"></iframe>')).toBe("");
+    expect(sanitizeMarkdown("<object></object><embed><form></form>")).toBe("");
+    // closing tag without an opening one is removed too
+    expect(sanitizeMarkdown("</script>text")).toBe("text");
+  });
+
+  it("strips on* event-handler attributes", () => {
+    expect(sanitizeMarkdown('<img src="a.png" onerror="alert(1)">')).toBe('<img src="a.png">');
+    expect(sanitizeMarkdown("<b onclick='x()'>hi</b>")).toBe("<b>hi</b>");
+    expect(sanitizeMarkdown('<a href="#" onmouseover = "p()">x</a>')).toBe('<a href="#">x</a>');
+  });
+
+  it("neutralises javascript:/vbscript: URLs", () => {
+    expect(sanitizeMarkdown("[x](javascript:alert(1))")).toBe("[x](javascript:alert(1))"); // md syntax is inert — render layer handles it
+    expect(sanitizeMarkdown('<a href="javascript:alert(1)">x</a>')).toBe('<a href="#">x</a>');
+    expect(sanitizeMarkdown("<a href='vbscript:x'>y</a>")).toBe('<a href="#">y</a>');
+    expect(sanitizeMarkdown("<img src=javascript:alert(1)>")).toBe('<img src="#">');
+  });
+
+  it("leaves normal Markdown and benign inline HTML untouched", () => {
+    const md = [
+      "# Heading",
+      "",
+      "A [link](https://vyotish.com) and **bold** text.",
+      "",
+      "```html",
+      "<b>code fence content is NOT executable</b>",
+      "```",
+      "",
+      "- item one",
+      "- item two",
+      "",
+      'Inline <em>emphasis</em> and <img src="/media/x.png" alt="x"> stay.',
+    ].join("\n");
+    expect(sanitizeMarkdown(md)).toBe(md);
+  });
+
+  it("runs inside validatePostInput so create and update both sanitise", () => {
+    const res = validatePostInput(
+      { title: "t", content_md: "<script>x</script>body", status: "draft" },
+      "create",
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.fields.content_md).toBe("body");
   });
 });

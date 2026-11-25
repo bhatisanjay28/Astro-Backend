@@ -6,16 +6,38 @@
  * lazily — every admin/public listing sweeps due drafts to published, so no
  * cron dependency and public reads never see an un-due draft.
  *
- * Sanitisation note: content_md is stored verbatim; HTML sanitisation happens
- * at render time (public blog, Epic 6.3 — rehype-sanitize over Astro's
- * markdown pipeline). Only admin_users can write posts (Epic 6.1), which is
- * the first gate; the render-time sanitiser is the second.
+ * Sanitisation note: content_md is sanitised on SAVE (sanitizeMarkdown below —
+ * owner brief: "sanitise Markdown on save as well as on render"; pre-commit
+ * review P2) AND at render time (public blog, Epic 6.3 — rehype-sanitize over
+ * Astro's markdown pipeline). Only admin_users can write posts (Epic 6.1),
+ * which is the first gate; the render-time sanitiser is the last.
  */
 
 export const POST_STATUSES = ["draft", "published", "archived"] as const;
 export type PostStatus = (typeof POST_STATUSES)[number];
 
 export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/**
+ * Save-time HTML scrub for Markdown sources. Strips the dangerous raw-HTML
+ * subset — scriptable/executable tags, on* event-handler attributes and
+ * javascript:/vbscript: URLs — while leaving all normal Markdown (code
+ * fences, benign inline HTML like <b>, links, tables) untouched. The render
+ * pipeline keeps its own rehype-sanitize pass as the second layer.
+ */
+const SCRIPTABLE_ELEMENT = /<\s*(script|iframe)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi;
+const SCRIPTABLE_TAG = /<\s*\/?\s*(script|iframe|object|embed|form|link|meta|base)\b[^>]*>/gi;
+const EVENT_ATTR = /\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;
+const DANGEROUS_URL =
+  /(\s(?:href|src)\s*=\s*)(?:"\s*(?:javascript|vbscript)\s*:[^"]*"|'\s*(?:javascript|vbscript)\s*:[^']*'|(?:javascript|vbscript)\s*:[^\s>]*)/gi;
+
+export function sanitizeMarkdown(md: string): string {
+  return md
+    .replace(SCRIPTABLE_ELEMENT, "") // element AND its inline JS body
+    .replace(SCRIPTABLE_TAG, "")
+    .replace(EVENT_ATTR, "")
+    .replace(DANGEROUS_URL, '$1"#"');
+}
 
 export function slugify(input: string): string {
   return input
@@ -93,7 +115,8 @@ export function validatePostInput(
         message: "content_md is required (1–100,000 characters)",
       });
     } else {
-      fields.content_md = md;
+      // sanitise on save — create AND update both flow through here
+      fields.content_md = sanitizeMarkdown(md);
     }
   }
 

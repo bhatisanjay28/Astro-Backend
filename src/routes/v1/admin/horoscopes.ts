@@ -6,6 +6,7 @@
  */
 import { Hono } from "hono";
 import type { AppEnvWithAdmin } from "../../../env";
+import { writeAudit } from "../../../lib/audit";
 import { rest, restList, supabaseCreds } from "../../../lib/supabase";
 
 type Env = AppEnvWithAdmin;
@@ -124,6 +125,18 @@ adminHoroscopesRoute.post("/admin/horoscopes", async (c) => {
     return c.json({ error: { code: "internal_error", message: "Horoscope create failed" } }, 500);
   }
   const rows = (await res.json()) as Array<Record<string, unknown>>;
+  const admin = c.get("admin");
+  const details: Record<string, unknown> = { sign, period, date_key: dateKey, lang, status };
+  for (const s of SECTIONS) {
+    if (typeof row[s] === "string") details[s] = `${(row[s] as string).length} chars`;
+  }
+  await writeAudit(creds, {
+    actor: admin.userId,
+    action: "horoscopes.create",
+    entity: "horoscopes",
+    entity_id: typeof rows[0]?.id === "string" ? (rows[0]?.id as string) : null,
+    details,
+  });
   return c.json({ data: rows[0] ?? null }, 201);
 });
 
@@ -157,5 +170,20 @@ adminHoroscopesRoute.patch("/admin/horoscopes/:id", async (c) => {
   const rows = (await res.json()) as Array<Record<string, unknown>>;
   if (rows.length === 0)
     return c.json({ error: { code: "not_found", message: "Horoscope not found" } }, 404);
+  const admin = c.get("admin");
+  const details: Record<string, unknown> = {
+    fields: Object.keys(patch).filter((k) => k !== "updated_at"),
+  };
+  if (body.status !== undefined) details.status = body.status;
+  for (const s of SECTIONS) {
+    if (typeof body[s] === "string") details[s] = `${(body[s] as string).length} chars`;
+  }
+  await writeAudit(creds, {
+    actor: admin.userId,
+    action: "horoscopes.update",
+    entity: "horoscopes",
+    entity_id: c.req.param("id"),
+    details,
+  });
   return c.json({ data: rows[0] });
 });

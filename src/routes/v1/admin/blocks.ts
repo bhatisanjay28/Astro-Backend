@@ -8,6 +8,7 @@
  */
 import { Hono } from "hono";
 import type { AppEnvWithAdmin } from "../../../env";
+import { writeAudit } from "../../../lib/audit";
 import { rest, supabaseCreds } from "../../../lib/supabase";
 
 type Env = AppEnvWithAdmin;
@@ -102,6 +103,20 @@ adminBlocksRoute.put("/admin/content-blocks/:key", async (c) => {
       500,
     );
   const rows = (await res.json()) as Array<Record<string, unknown>>;
+  const blockId = typeof rows[0]?.id === "string" ? (rows[0]?.id as string) : key;
+  const admin = c.get("admin");
+  await writeAudit(creds, {
+    actor: admin.userId,
+    action: "content_blocks.update",
+    entity: "content_blocks",
+    entity_id: blockId,
+    details: {
+      block_key: key,
+      lang,
+      status,
+      payload_keys: Object.keys((body.payload ?? {}) as Record<string, unknown>).slice(0, 25),
+    },
+  });
   return c.json({ data: rows[0] ?? { block_key: key, lang, status, payload: body.payload } });
 });
 
@@ -129,5 +144,13 @@ adminBlocksRoute.delete("/admin/content-blocks/:key", async (c) => {
       { error: { code: "internal_error", message: "Content block delete failed" } },
       500,
     );
+  const admin = c.get("admin");
+  await writeAudit(creds, {
+    actor: admin.userId,
+    action: "content_blocks.delete",
+    entity: "content_blocks",
+    entity_id: key,
+    details: { lang },
+  });
   return c.json({ data: { block_key: key, lang, deleted: true } });
 });

@@ -6,6 +6,7 @@
  */
 import { Hono } from "hono";
 import type { AppEnvWithAdmin } from "../../../env";
+import { writeAudit } from "../../../lib/audit";
 import { SLUG_RE, slugify } from "../../../lib/posts";
 import { rest, supabaseCreds } from "../../../lib/supabase";
 
@@ -89,6 +90,14 @@ adminTaxonomyRoute.post("/admin/categories", async (c) => {
       500,
     );
   }
+  const admin = c.get("admin");
+  await writeAudit(creds, {
+    actor: admin.userId,
+    action: "blog_categories.create",
+    entity: "blog_categories",
+    entity_id: created.id,
+    details: { slug: created.slug, name: created.name.slice(0, 120) },
+  });
   return c.json({ data: created }, 201);
 });
 

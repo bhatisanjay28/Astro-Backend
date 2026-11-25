@@ -309,6 +309,69 @@ describe("POST /api/v1/admin/media", () => {
     expect(body.error.message).toContain("SVG");
   });
 
+  it("rejects bytes that do not match the declared image type (magic-byte check)", async () => {
+    mockSupabase(identityOk);
+    const res = await app.request(
+      "/api/v1/admin/media?filename=evil.png&alt=decoy",
+      authed({
+        method: "POST",
+        headers: { "content-type": "image/png" },
+        // text masquerading as a PNG — no PNG signature
+        body: new Uint8Array([0x3c, 0x73, 0x63, 0x72, 0x69, 0x70, 0x74, 0x3e]),
+      }),
+      BINDINGS,
+    );
+    expect(res.status).toBe(415);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toContain("does not match");
+  });
+
+  it("accepts each allowed type by its real signature", async () => {
+    const cases: Array<{ mime: string; bytes: number[] }> = [
+      { mime: "image/png", bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
+      { mime: "image/jpeg", bytes: [0xff, 0xd8, 0xff, 0xe0] },
+      { mime: "image/gif", bytes: [0x47, 0x49, 0x46, 0x38, 0x39, 0x61] },
+      {
+        mime: "image/webp",
+        bytes: [0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50],
+      },
+    ];
+    for (const { mime, bytes } of cases) {
+      let stored = false;
+      mockSupabase((url, init) => {
+        if (url.includes("/storage/v1/object/media/")) return json({ Key: "x" }, 200);
+        if (url.includes("/rest/v1/media") && (init?.method ?? "GET") === "POST") {
+          stored = true;
+          return json([{ id: "m" }], 201);
+        }
+        return identityOk(url);
+      });
+      const res = await app.request(
+        `/api/v1/admin/media?filename=ok&alt=alt text`,
+        authed({ method: "POST", headers: { "content-type": mime }, body: new Uint8Array(bytes) }),
+        BINDINGS,
+      );
+      expect(res.status).toBe(201);
+      expect(stored).toBe(true);
+    }
+  });
+
+  it("requires alt text", async () => {
+    mockSupabase(identityOk);
+    const res = await app.request(
+      "/api/v1/admin/media?filename=no-alt.png",
+      authed({
+        method: "POST",
+        headers: { "content-type": "image/png" },
+        body: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      }),
+      BINDINGS,
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toContain("alt");
+  });
+
   it("rejects oversized bodies", async () => {
     mockSupabase(identityOk);
     const big = new Uint8Array(5 * 1024 * 1024 + 1);
@@ -339,7 +402,7 @@ describe("POST /api/v1/admin/media", () => {
       authed({
         method: "POST",
         headers: { "content-type": "image/png" },
-        body: new Uint8Array([137, 80]),
+        body: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
       }),
       BINDINGS,
     );
@@ -369,11 +432,11 @@ describe("POST /api/v1/admin/media", () => {
       return identityOk(url);
     });
     const res = await app.request(
-      "/api/v1/admin/media?filename=first.png",
+      "/api/v1/admin/media?filename=first.png&alt=first upload",
       authed({
         method: "POST",
         headers: { "content-type": "image/png" },
-        body: new Uint8Array([1]),
+        body: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
       }),
       BINDINGS,
     );

@@ -11,6 +11,7 @@
  */
 import { Hono } from "hono";
 import type { AppEnvWithAdmin } from "../../../env";
+import { writeAudit } from "../../../lib/audit";
 import { slugify } from "../../../lib/posts";
 import { rest, type SupabaseCreds, storage, supabaseCreds } from "../../../lib/supabase";
 
@@ -27,6 +28,29 @@ const EXT_BY_MIME: Record<string, string> = {
 };
 const MAX_BYTES = 5 * 1024 * 1024;
 const BUCKET = "media";
+
+/** True when the bytes' magic number matches the declared image mime — a
+ * renamed file that lies about its Content-Type is rejected before it can
+ * reach the public bucket (owner brief: validate uploads "type, size,
+ * content"; pre-commit review P2). */
+function matchesMagic(mime: string, b: Uint8Array): boolean {
+  const starts = (...sig: number[]): boolean => sig.every((v, i) => b[i] === v);
+  const at = (offset: number, ...sig: number[]): boolean =>
+    sig.every((v, i) => b[offset + i] === v);
+  switch (mime) {
+    case "image/png":
+      return starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a);
+    case "image/jpeg":
+      return starts(0xff, 0xd8, 0xff);
+    case "image/gif":
+      return starts(0x47, 0x49, 0x46, 0x38); // "GIF8" (87a/89a)
+    case "image/webp":
+      // "RIFF" at 0..3, "WEBP" at 8..11
+      return starts(0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50);
+    default:
+      return false;
+  }
+}
 
 function credsMissing(c: any) {
   return c.json(
@@ -86,6 +110,26 @@ adminMediaRoute.post("/admin/media", async (c) => {
   if (bytes.byteLength > MAX_BYTES) {
     return c.json({ error: { code: "validation_error", message: "image must be ≤ 5 MB" } }, 400);
   }
+  // Content check: declared type must match the file's magic bytes (a text
+  // file renamed .png must not enter the public bucket as an image).
+  if (!matchesMagic(mime, new Uint8Array(bytes))) {
+    return c.json(
+      {
+        error: {
+          code: "validation_error",
+          message: "file content does not match its declared image type",
+        },
+      },
+      415,
+    );
+  }
+  // Alt text is required (a11y + SEO — Mary's media audit item).
+  if (!alt) {
+    return c.json(
+      { error: { code: "validation_error", message: "alt query parameter is required" } },
+      400,
+    );
+  }
 
   const base = slugify(filename.replace(/\.[a-z0-9]+$/i, "")) || "image";
   const now = new Date();
@@ -120,7 +164,7 @@ adminMediaRoute.post("/admin/media", async (c) => {
     path: objectPath,
     mime,
     size_bytes: bytes.byteLength,
-    alt: alt || null,
+    alt,
   };
   const dbRes = await rest(creds, "media", {
     method: "POST",
@@ -141,6 +185,19 @@ adminMediaRoute.post("/admin/media", async (c) => {
       500,
     );
   }
+  const admin = c.get("admin");
+  await writeAudit(creds, {
+    actor: admin.userId,
+    action: "media.upload",
+    entity: "media",
+    entity_id: row.id,
+    details: {
+      filename: filename.slice(0, 120),
+      path: objectPath,
+      mime,
+      size_bytes: bytes.byteLength,
+    },
+  });
   const publicUrl = `${creds.url}/storage/v1/object/public/${BUCKET}/${objectPath}`;
   return c.json(
     {
