@@ -50,17 +50,28 @@ const libKey = (slot: string, condition: string, lang: Lang) => `${slot}|${condi
 
 async function loadLibrary(creds: SupabaseCreds): Promise<LibraryIndex> {
   const index: LibraryIndex = new Map();
-  const res = await rest(
-    creds,
-    "horoscope_library?select=slot,condition,lang,variant_no,text&is_active=eq.true",
-  );
-  if (!res.ok) return index; // empty library → full fallback mode (honest empty state)
-  const rows = (await res.json()) as LibraryRow[];
-  for (const row of rows) {
-    const key = libKey(row.slot, row.condition, row.lang as Lang);
-    const list = index.get(key) ?? [];
-    list.push(row);
-    index.set(key, list);
+  // PostgREST caps a single page at 1000 rows — page through until the full
+  // active library is indexed. A silently truncated index would degrade the
+  // missing slots to fallback text (and trip the §10.5 variety rule).
+  const pageSize = 1000;
+  for (let offset = 0; ; offset += pageSize) {
+    const res = await rest(
+      creds,
+      `horoscope_library?select=slot,condition,lang,variant_no,text&is_active=eq.true&limit=${pageSize}&offset=${offset}`,
+      { headers: { Prefer: "count=exact" } },
+    );
+    if (!res.ok) {
+      if (offset === 0) return index; // empty library → full fallback mode (honest empty state)
+      break; // later-page failure: keep what is already indexed
+    }
+    const rows = (await res.json()) as LibraryRow[];
+    for (const row of rows) {
+      const key = libKey(row.slot, row.condition, row.lang as Lang);
+      const list = index.get(key) ?? [];
+      list.push(row);
+      index.set(key, list);
+    }
+    if (rows.length < pageSize) break;
   }
   return index;
 }
@@ -71,10 +82,23 @@ function makePick(lib: LibraryIndex, dateKey: string, sign: HoroscopeSign, lang:
     condition: string,
     rating: Rating,
     recentVariants?: number[],
+    salt?: string,
   ): PickResult => {
     const rows = lib.get(libKey(slot, condition, lang)) ?? [];
     const pool: VariantPool = { rows, fallback: fallbackForSlot(slot, rating) };
-    return pickVariant({ dateKey, sign, lang, slot, condition, recentVariants }, pool);
+    // salt (e.g. a month key) scopes the seed so sub-period picks vary within
+    // one run — the yearly month table would otherwise repeat one clause.
+    return pickVariant(
+      {
+        dateKey: salt ? `${dateKey}#${salt}` : dateKey,
+        sign,
+        lang,
+        slot,
+        condition,
+        recentVariants,
+      },
+      pool,
+    );
   };
 }
 
@@ -123,6 +147,11 @@ export function runWindows(now: Date): Array<{ period: HoroscopePeriod; dateKey:
 function nextMonth(yyyyMm: string): string {
   const [y, m] = yyyyMm.split("-").map(Number) as [number, number];
   return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
+}
+
+function prevMonth(yyyyMm: string): string {
+  const [y, m] = yyyyMm.split("-").map(Number) as [number, number];
+  return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
 }
 
 /** Days an IST window covers, expressed as dateKeys. */
@@ -215,12 +244,19 @@ export async function generateHoroscopes(env: Env): Promise<GenerateResult> {
       return snap;
     };
 
-    // previous payloads for the daily variety rule (§10.5): D-1 and D-2
+    // previous payloads for the §10.5 variety rule, per period — variety is
+    // judged within one content family (a weekly overview is a different page
+    // from a daily one; cross-period text is never compared)
     const today = istDateKey(now);
-    const prevDaily = await loadPrevPayloads(creds, "daily", [
-      addDays(today, -1),
-      addDays(today, -2),
-    ]);
+    const weeklyNow = periodDateKey("weekly", now);
+    const monthlyNow = periodDateKey("monthly", now);
+    const yearlyNow = periodDateKey("yearly", now);
+    const prevs = {
+      daily: await loadPrevPayloads(creds, "daily", [addDays(today, -1), addDays(today, -2)]),
+      weekly: await loadPrevPayloads(creds, "weekly", [addDays(weeklyNow, -7)]),
+      monthly: await loadPrevPayloads(creds, "monthly", [prevMonth(monthlyNow)]),
+      yearly: await loadPrevPayloads(creds, "yearly", [String(Number(yearlyNow) - 1)]),
+    };
 
     const rows: ValidationRow[] = [];
     const composeErrors: Violation[] = [];
@@ -228,11 +264,14 @@ export async function generateHoroscopes(env: Env): Promise<GenerateResult> {
       const days = windowDays(period, dateKey);
       for (const sign of HOROSCOPE_SIGNS) {
         for (const lang of ["en", "hi"] as Lang[]) {
-          const recent = period === "daily" ? recentFor(prevDaily, sign, lang) : undefined;
+          // yesterday/tomorrow share the daily family (composeDaily keys slots "daily.*")
+          const family =
+            period === "weekly" || period === "monthly" || period === "yearly" ? period : "daily";
+          const recent = recentFor(prevs[family], sign, lang);
           const ctx: ComposeCtx = {
             lang,
             pick: makePick(lib, dateKey, sign, lang),
-            ...(recent && recent.size > 0 ? { recent } : {}),
+            ...(recent.size > 0 ? { recent } : {}),
           };
           let payload: HoroscopePayload;
           try {
@@ -256,11 +295,13 @@ export async function generateHoroscopes(env: Env): Promise<GenerateResult> {
     // §10 gate — publish only passing rows; violations feed the run log/health
     const { ok, violations } = validateBatch(
       rows,
-      prevDaily.map((p) => ({
-        sign: p.sign as HoroscopeSign,
-        lang: p.lang as Lang,
-        payload: p.payload,
-      })),
+      Object.values(prevs)
+        .flat()
+        .map((p) => ({
+          sign: p.sign as HoroscopeSign,
+          lang: p.lang as Lang,
+          payload: p.payload,
+        })),
     );
     const allViolations = [...composeErrors, ...violations];
     const failing = new Set(allViolations.map((v) => `${v.sign}|${v.lang}`));

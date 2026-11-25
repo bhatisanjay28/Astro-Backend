@@ -324,6 +324,27 @@ describe("validateBatch (§10 rules 1–7)", () => {
     expect(result.violations.some((v) => v.rule === 5)).toBe(true);
   });
 
+  test("rule 5: idempotent republish of the same dated row is not a violation", () => {
+    const rows = dailyBatch("2026-11-24", snap);
+    const prev = rows[0]!;
+    // cron re-run covering an already-published date: same period + date_key
+    const result = validateBatch(rows, [
+      { sign: prev.sign, lang: prev.lang, payload: { ...prev.payload, date_key: "2026-11-24" } },
+    ]);
+    expect(result.violations.filter((v) => v.rule === 5)).toEqual([]);
+  });
+
+  test("rule 5: cross-period prev payloads are not compared", () => {
+    const rows = dailyBatch("2026-11-24", snap);
+    const prev = rows[0]!;
+    // a weekly payload sharing the daily text is a different page — never a daily variety violation
+    const weeklyPayload = { ...prev.payload, period: "weekly" as const };
+    const result = validateBatch(rows, [
+      { sign: prev.sign, lang: prev.lang, payload: weeklyPayload },
+    ]);
+    expect(result.violations.filter((v) => v.rule === 5)).toEqual([]);
+  });
+
   test("rule 6: weekly date_key must be a Monday with a Mon–Sun range", () => {
     const weekSnaps = Array.from({ length: 7 }, (_, i) =>
       snapshotAt(new Date(`${addDays("2026-11-24", i)}T00:05:00+05:30`)),

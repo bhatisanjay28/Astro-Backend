@@ -56,7 +56,18 @@ export interface PickResult {
 /** Injected by the generator: library lookup + fallback + no-repeat dodge. */
 export interface ComposeCtx {
   lang: Lang;
-  pick(slot: string, condition: string, rating: Rating, recentVariants?: number[]): PickResult;
+  /**
+   * `salt` scopes the FNV seed beyond the run's dateKey — e.g. the yearly
+   * month table passes the month key so 12 months don't all land on the same
+   * variant of a clause cell.
+   */
+  pick(
+    slot: string,
+    condition: string,
+    rating: Rating,
+    recentVariants?: number[],
+    salt?: string,
+  ): PickResult;
   /** slot → variant_nos used on the previous 2 dated rows (daily §10.5 no-repeat). */
   recent?: Map<string, number[]>;
 }
@@ -276,8 +287,16 @@ function composeWindow(
   const scores = snaps.map((snap) => dayOverallScore(sign, snap));
   const overall = scores.reduce((a, b) => a + b, 0) / Math.max(1, scores.length);
   const rating = ratingFromScore(overall);
-  const retro = retroBit(snaps) === "review";
-  const picked = ctx.pick(`${period}.overview`, `rating=${rating}.retro=${retro}`, rating);
+  // §7.1 — keep retroBit's "review"|"none" vocabulary verbatim in the condition;
+  // coercing to a boolean emitted retro=true|false, which matches no library row
+  // and silently dropped every weekly/monthly overview onto fallback templates.
+  const retro = retroBit(snaps);
+  const picked = ctx.pick(
+    `${period}.overview`,
+    `rating=${rating}.retro=${retro}`,
+    rating,
+    ctx.recent?.get(`${period}.overview`),
+  );
 
   const areas: Record<string, AreaEntry> = {};
   for (const def of AREA_DEFS) {
@@ -578,6 +597,8 @@ function composeYearly(
         "clause.pos",
         `planet=${topPos.planet}.band=${clauseBand(topPos.v)}`,
         mRating,
+        undefined,
+        mKey,
       );
       parts.push(fillClause(frag.text, topPos.planet, topPos.house, ctx.lang));
     }
@@ -586,10 +607,12 @@ function composeYearly(
         "clause.neg",
         `planet=${topNeg.planet}.band=${clauseBand(topNeg.v)}`,
         mRating,
+        undefined,
+        mKey,
       );
       parts.push(fillClause(frag.text, topNeg.planet, topNeg.house, ctx.lang));
     }
-    const closing = ctx.pick("clause.closing", `rating=${mRating}`, mRating);
+    const closing = ctx.pick("clause.closing", `rating=${mRating}`, mRating, undefined, mKey);
     const clause = parts.length > 0 ? `${parts.join("; ")} — ${closing.text}` : closing.text;
 
     const mm = mKey.slice(5, 7);

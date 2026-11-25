@@ -181,6 +181,27 @@ describe("FNV1a64 selection (library-structure §5)", () => {
       ),
     ).toThrow(/no variants and no fallback/);
   });
+
+  test("salted seeds spread sub-period picks across variants (yearly month table)", () => {
+    // 12 months on one run: without the month salt every pick hashed to the
+    // same variant and the table read the same clause 12 times (2026-11-24 bug).
+    const pool = { rows: [], fallback: ["fb1", "fb2", "fb3"] };
+    const picks = new Set<string>();
+    for (let m = 1; m <= 12; m++) {
+      const r = pickVariant(
+        {
+          dateKey: `2026#2026-${String(m).padStart(2, "0")}`,
+          sign: "aries",
+          lang: "en",
+          slot: "clause.closing",
+          condition: "rating=moderate",
+        },
+        pool,
+      );
+      picks.add(r.text);
+    }
+    expect(picks.size).toBeGreaterThan(1);
+  });
 });
 
 describe("resolve-current mapping (route IST ladder)", () => {

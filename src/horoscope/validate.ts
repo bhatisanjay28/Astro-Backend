@@ -237,6 +237,13 @@ export function validateBatch(
     const prevs = prevPayloads.filter((p) => p.sign === row.sign && p.lang === row.lang);
     const texts = payloadTexts(row.payload);
     for (const prev of prevs) {
+      // Variety is judged within one content family: a weekly overview is a
+      // different page from a daily one, so only same-period rows compare.
+      if (prev.payload.period !== row.period) continue;
+      // Idempotent republish of the same dated row (cron retry / re-run covering
+      // an already-published date) may carry identical text — variety is judged
+      // across different dates, not against the row's own previous publication.
+      if (prev.payload.date_key === row.dateKey) continue;
       const prevTexts = payloadTexts(prev.payload);
       for (const [slot, text] of texts) {
         const before = prevTexts.get(slot);
