@@ -18,6 +18,20 @@ export type Bindings = {
    * the browser never sees it. Without it, /places/* falls back to the
    * cities table (same response shape). */
   GOOGLE_PLACES_API_KEY?: string;
+  /**
+   * Optional CF Pages deploy hook — the horoscope cron pings it after a
+   * publishing run and the admin nav route pings it after a nav config
+   * save, so the static frontend rebuilds with the fresh data (build-time
+   * SSR). Unset → ping skipped (frontend refreshes on the next
+   * push-triggered deploy).
+   */
+  FRONTEND_DEPLOY_HOOK_URL?: string;
+  /**
+   * Test opt-out for every rate limiter (login proxy, admin action buckets,
+   * booking in-file throttle) — mirrors src/lib/rate-limit.ts. Never set in
+   * production.
+   */
+  RATE_LIMIT_DISABLED?: string | boolean;
 };
 
 export type AppEnv = {

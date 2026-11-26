@@ -30,6 +30,9 @@ const EXTRA_KEYS = [
   "public.contact_email",
   "public.contact_whatsapp",
   "public.offers_config",
+  // phase 4 — nav/home config consumed by the frontend build-merge (scripts/)
+  "public.nav_config",
+  "public.home_sections",
 ] as const;
 
 settingsRoute.get("/settings", async (c) => {
@@ -96,6 +99,14 @@ settingsRoute.get("/settings", async (c) => {
       // through unvalidated here; the renderer fail-softs on anything else.
       offers_config: dbByKey.has("public.offers_config")
         ? (dbByKey.get("public.offers_config") ?? null)
+        : null,
+      // phase 4 — NavTab[] / section-order JSON; passed through unvalidated
+      // (shape contracts live with their editors), null when unset
+      nav_config: dbByKey.has("public.nav_config")
+        ? (dbByKey.get("public.nav_config") ?? null)
+        : null,
+      home_sections: dbByKey.has("public.home_sections")
+        ? (dbByKey.get("public.home_sections") ?? null)
         : null,
     },
     meta: {

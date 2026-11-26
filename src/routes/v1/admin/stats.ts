@@ -22,7 +22,7 @@ interface StatsShape {
   astrologers: { active: number; inactive: number };
   pujas: { active: number };
   inbox: { new: number; older_24h: number; scheduled_today: number; closed_7d: number };
-  subscribers: { confirmed: number; unsubscribed: number };
+  subscribers: { confirmed: number; unsubscribed: number; active: number };
   media: { count: number };
 }
 
@@ -56,14 +56,16 @@ async function gather(
     inboxClosed7dP,
     subsConfirmed,
     subsUnsub,
+    subsActive,
     mediaCount,
   ] = await Promise.all([
     one("blog_posts?select=id&status=eq.published&deleted_at=is.null"),
     one("blog_posts?select=id&status=eq.draft&deleted_at=is.null"),
     one("blog_posts?select=id&deleted_at=not.is.null"),
-    one("astrologers?select=id&is_active=eq.true"),
-    one("astrologers?select=id&is_active=eq.false"),
-    one("pujas?select=id&is_active=eq.true"),
+    // phase 4 [R5]: soft-deleted catalog rows leave every count
+    one("astrologers?select=id&is_active=eq.true&deleted_at=is.null"),
+    one("astrologers?select=id&is_active=eq.false&deleted_at=is.null"),
+    one("pujas?select=id&is_active=eq.true&deleted_at=is.null"),
     // inbox.new = unarchived, non-test, status=new across both request kinds
     one("consultation_requests?select=id&status=eq.new&is_test=eq.false&archived_at=is.null"),
     one("puja_requests?select=id&status=eq.new&is_test=eq.false&archived_at=is.null"),
@@ -89,6 +91,8 @@ async function gather(
     one(`puja_requests?select=id&status=eq.closed&closed_at=gte.${weekAgo}`),
     one("newsletter_subscribers?select=email&confirmed_at=not.is.null&unsubscribed_at=is.null"),
     one("newsletter_subscribers?select=email&unsubscribed_at=not.is.null"),
+    // active = still reachable (not unsubscribed), confirmed or not
+    one("newsletter_subscribers?select=email&unsubscribed_at=is.null"),
     one("media?select=id"),
   ]);
 
@@ -102,7 +106,7 @@ async function gather(
       scheduled_today: inboxTodayC + inboxTodayP,
       closed_7d: inboxClosed7dC + inboxClosed7dP,
     },
-    subscribers: { confirmed: subsConfirmed, unsubscribed: subsUnsub },
+    subscribers: { confirmed: subsConfirmed, unsubscribed: subsUnsub, active: subsActive },
     media: { count: mediaCount },
   };
 }

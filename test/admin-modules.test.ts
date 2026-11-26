@@ -406,7 +406,7 @@ describe("newsletter export + settings", () => {
       return identityOk(url);
     });
     const ok = await app.request(
-      "/api/v1/admin/settings/gemstones_site_url",
+      "/api/v1/admin/settings/public.gemstones_site_url",
       authed({
         method: "PUT",
         headers: { "content-type": "application/json" },
@@ -415,7 +415,7 @@ describe("newsletter export + settings", () => {
       BINDINGS,
     );
     expect(ok.status).toBe(200);
-    expect(row?.key).toBe("gemstones_site_url");
+    expect(row?.key).toBe("public.gemstones_site_url");
     const bad = await app.request(
       "/api/v1/admin/settings/BAD KEY!",
       authed({

@@ -56,7 +56,8 @@ adminHoroscopesRoute.get("/admin/horoscopes", async (c) => {
   const perPage = Math.min(100, Math.max(1, Number(q.per_page ?? "25") || 25));
   const params = new URLSearchParams({
     select: COLUMNS,
-    order: "updated_at.desc",
+    // deterministic tiebreakers — equal updated_at must not shuffle pages ([R8])
+    order: "updated_at.desc,period.desc,sign.asc",
     limit: String(perPage),
     offset: String((page - 1) * perPage),
   });
@@ -186,4 +187,33 @@ adminHoroscopesRoute.patch("/admin/horoscopes/:id", async (c) => {
     details,
   });
   return c.json({ data: rows[0] });
+});
+
+// phase 4 [R8] — hard delete of a horoscope row (irreversible). Gated by the
+// WRITE_HORIZON map (DELETE → horoscope.delete, admin+ NOT content_editor).
+adminHoroscopesRoute.delete("/admin/horoscopes/:id", async (c) => {
+  const creds = supabaseCreds(c);
+  if (!creds) return credsMissing(c);
+  const id = c.req.param("id");
+  const prevRes = await rest(creds, `horoscopes?id=eq.${encodeURIComponent(id)}&select=${COLUMNS}`);
+  const prevRows = prevRes.ok ? ((await prevRes.json()) as Array<Record<string, unknown>>) : [];
+  const prev = prevRows[0];
+  if (!prev) return c.json({ error: { code: "not_found", message: "Horoscope not found" } }, 404);
+  const res = await rest(creds, `horoscopes?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok)
+    return c.json({ error: { code: "internal_error", message: "Horoscope delete failed" } }, 500);
+  const admin = c.get("admin");
+  await writeAudit(creds, {
+    actor: admin.userId,
+    action: "horoscopes.delete",
+    entity: "horoscopes",
+    entity_id: id,
+    details: {
+      sign: prev.sign,
+      period: prev.period,
+      date_key: prev.date_key,
+      lang: prev.lang,
+    },
+  });
+  return c.json({ data: { deleted: true, id } });
 });

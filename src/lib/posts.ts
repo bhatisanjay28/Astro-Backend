@@ -53,6 +53,11 @@ export function sanitizeDeep(value: unknown): unknown {
   if (value !== null && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      // skip __proto__: plain assignment would invoke the setter (replacing
+      // out's prototype, silently losing the key) instead of storing data
+      // ([P3] review follow-up — no global pollution either way, but the
+      // scrub should be predictable)
+      if (k === "__proto__" || k === "constructor" || k === "prototype") continue;
       out[k] = sanitizeDeep(v);
     }
     return out;

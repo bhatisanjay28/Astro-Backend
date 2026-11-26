@@ -275,6 +275,11 @@ describe("PUT /api/v1/admin/content-blocks/:key — sanitizeDeep [R9]", () => {
         stored = JSON.parse(String(init?.body)) as Array<Record<string, unknown>>;
         return json([{ id: "blk-1", block_key: "kundli.lagna", lang: "en", status: "published" }]);
       }
+      // the merge-edit pre-read is mandatory since the [P1] fix — a failing
+      // pre-read 500s instead of degrading to a blind replace
+      if (url.includes("/rest/v1/content_blocks") && (init?.method ?? "GET") === "GET") {
+        return json([]);
+      }
       return identityAs("admin")(url);
     });
     mockSupabase(wrapped);

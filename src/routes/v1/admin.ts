@@ -45,9 +45,27 @@ const WRITE_CATALOG = {
 const WRITE_HORIZON = {
   POST: "horoscope.write",
   PATCH: "horoscope.write",
-  DELETE: "horoscope.write",
+  // phase 4 [R8]: dropping a horoscope row is irreversible → its own
+  // capability, held by admin+ but NOT content_editor (rbac.ts)
+  DELETE: "horoscope.delete",
 } as const;
 const WRITE_INBOX = { PATCH: "inbox.write", POST: "inbox.write", DELETE: "inbox.write" } as const;
+// phase 4 — newsletter subscribers + the unified catalog routes
+const SUBSCRIBER_MAP = {
+  GET: "newsletter.read",
+  PATCH: "newsletter.write",
+  DELETE: "newsletter.delete", // DPDP erase — super_admin + admin only
+} as const;
+// /admin/catalog/* carries POST /admin/catalog/reorder today; PATCH/DELETE
+// are pinned so any future mutating route under this subtree inherits
+// catalog.write instead of requireCapabilityFor's requireAdmin default for
+// unmapped methods (review [P3]).
+const CATALOG_MAP = {
+  GET: "catalog.read",
+  POST: "catalog.write",
+  PATCH: "catalog.write",
+  DELETE: "catalog.write",
+} as const;
 
 adminRoute.use("/admin/posts", requireCapabilityFor({ GET: "posts.read", ...WRITE_POSTS }));
 adminRoute.use("/admin/posts/*", requireCapabilityFor({ GET: "posts.read", ...WRITE_POSTS }));
@@ -96,6 +114,10 @@ adminRoute.use("/admin/requests", requireCapabilityFor({ GET: "inbox.read", ...W
 adminRoute.use("/admin/requests/*", requireCapabilityFor({ GET: "inbox.read", ...WRITE_INBOX }));
 adminRoute.use("/admin/messages", requireCapabilityFor({ GET: "inbox.read", ...WRITE_INBOX }));
 adminRoute.use("/admin/messages/*", requireCapabilityFor({ GET: "inbox.read", ...WRITE_INBOX }));
+adminRoute.use("/admin/subscribers", requireCapabilityFor({ ...SUBSCRIBER_MAP }));
+adminRoute.use("/admin/subscribers/*", requireCapabilityFor({ ...SUBSCRIBER_MAP }));
+adminRoute.use("/admin/catalog", requireCapabilityFor({ ...CATALOG_MAP }));
+adminRoute.use("/admin/catalog/*", requireCapabilityFor({ ...CATALOG_MAP }));
 
 // super_admin-only + audit-read + dashboard-stats gates (registered before
 // the mounts so they run ahead of the handlers; both patterns so subpaths

@@ -111,14 +111,22 @@ describe("permission matrix (02 §C, pinned)", () => {
     }
   });
 
-  it("admin holds everything except users.manage, settings.engine and posts.purge", () => {
+  it("admin holds everything except users.manage, settings.engine, posts.purge and catalog.purge", () => {
     expect(roleCan("admin", "users.manage")).toBe(false);
     expect(roleCan("admin", "settings.engine")).toBe(false);
     // phase-3 story [R4]: permanent blog purges are super_admin-only
     expect(roleCan("admin", "posts.purge")).toBe(false);
+    // phase-4 story [R6]: catalog purges are super_admin-only too
+    expect(roleCan("admin", "catalog.purge")).toBe(false);
     expect(roleCan("admin", "media.force_delete")).toBe(true);
     for (const cap of CAPABILITIES) {
-      if (cap === "users.manage" || cap === "settings.engine" || cap === "posts.purge") continue;
+      if (
+        cap === "users.manage" ||
+        cap === "settings.engine" ||
+        cap === "posts.purge" ||
+        cap === "catalog.purge"
+      )
+        continue;
       expect(roleCan("admin", cap)).toBe(true);
     }
   });

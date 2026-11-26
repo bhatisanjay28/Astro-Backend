@@ -65,7 +65,7 @@ export const requestsRoute = new Hono<AppEnv>();
 
 requestsRoute.post("/requests/consultation", async (c) => {
   const ip = c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for") ?? "unknown";
-  if (throttled(ip)) {
+  if (!c.env?.RATE_LIMIT_DISABLED && throttled(ip)) {
     return c.json(
       { error: { code: "rate_limited", message: "Too many requests. Try again later." } },
       429,
@@ -112,7 +112,7 @@ requestsRoute.post("/requests/consultation", async (c) => {
   let astrologerId: string | null = null;
   if (typeof body.astrologer_slug === "string" && body.astrologer_slug.trim()) {
     const res = await fetch(
-      `${supabaseUrl}/rest/v1/astrologers?slug=eq.${encodeURIComponent(body.astrologer_slug.trim())}&is_active=eq.true&select=id`,
+      `${supabaseUrl}/rest/v1/astrologers?slug=eq.${encodeURIComponent(body.astrologer_slug.trim())}&is_active=eq.true&deleted_at=is.null&select=id`,
       { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } },
     );
     if (res.ok) {
@@ -177,7 +177,7 @@ requestsRoute.post("/requests/consultation", async (c) => {
 
 requestsRoute.post("/requests/puja", async (c) => {
   const ip = c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for") ?? "unknown";
-  if (throttled(ip)) {
+  if (!c.env?.RATE_LIMIT_DISABLED && throttled(ip)) {
     return c.json(
       { error: { code: "rate_limited", message: "Too many requests. Try again later." } },
       429,
@@ -222,7 +222,7 @@ requestsRoute.post("/requests/puja", async (c) => {
   let pujaId: string | null = null;
   if (typeof body.puja_slug === "string" && body.puja_slug.trim()) {
     const res = await fetch(
-      `${supabaseUrl}/rest/v1/pujas?slug=eq.${encodeURIComponent(body.puja_slug.trim())}&is_active=eq.true&select=id`,
+      `${supabaseUrl}/rest/v1/pujas?slug=eq.${encodeURIComponent(body.puja_slug.trim())}&is_active=eq.true&deleted_at=is.null&select=id`,
       { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } },
     );
     if (res.ok) {

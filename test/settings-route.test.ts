@@ -81,6 +81,42 @@ describe("GET /api/v1/settings", () => {
     expect(unsetBody.data.offers_config).toBeNull();
   });
 
+  it("serves the saved nav keys to the public ([R7]/AC5 pin — the build merge depends on them)", async () => {
+    const tabs = [
+      {
+        label: "Consultations",
+        label_hi: "परामर्श",
+        href: "/consultations",
+        description: "d",
+        icon: "support_agent",
+      },
+    ];
+    const sections = [{ key: "hero", enabled: true }];
+    mockSupabase((path) => {
+      if (path.includes("select=")) {
+        return [
+          { key: "public.nav_config", value: tabs },
+          { key: "public.home_sections", value: sections },
+        ];
+      }
+      return [];
+    });
+    const res = await app.request("/api/v1/settings", {}, BINDINGS);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { nav_config: unknown; home_sections: unknown } };
+    expect(body.data.nav_config).toEqual(tabs);
+    expect(body.data.home_sections).toEqual(sections);
+
+    // unset in the DB → null, and the frontend falls back to checked-in NAV_TABS
+    mockSupabase(() => []);
+    const unset = await app.request("/api/v1/settings", {}, BINDINGS);
+    const unsetBody = (await unset.json()) as {
+      data: { nav_config: unknown; home_sections: unknown };
+    };
+    expect(unsetBody.data.nav_config).toBeNull();
+    expect(unsetBody.data.home_sections).toBeNull();
+  });
+
   it("degrades invalid/missing engine values to defaults with source map", async () => {
     mockSupabase(() => [{ key: "public.engine_ayanamsha", value: "not-a-thing" }]);
     const res = await app.request("/api/v1/settings", {}, BINDINGS);

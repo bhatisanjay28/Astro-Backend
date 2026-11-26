@@ -745,7 +745,8 @@ describe("GET /admin/stats (the dashboard stops lying)", () => {
     expect(body.data.astrologers).toEqual({ active: 3, inactive: 1 });
     expect(body.data.pujas).toEqual({ active: 5 });
     expect(body.data.inbox).toEqual({ new: 3, older_24h: 1, scheduled_today: 2, closed_7d: 2 });
-    expect(body.data.subscribers).toEqual({ confirmed: 9, unsubscribed: 1 });
+    // phase-4 [R5]: stats also counts still-active subscribers (unsubscribed_at null)
+    expect(body.data.subscribers).toEqual({ confirmed: 9, unsubscribed: 1, active: 1 });
     expect(body.data.media).toEqual({ count: 4 });
     // AC 5 regression: puja scheduled_today queries the REAL column
     const pujaToday = urls.find(

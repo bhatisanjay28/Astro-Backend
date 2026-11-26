@@ -91,6 +91,35 @@ adminBlocksRoute.put("/admin/content-blocks/:key", async (c) => {
       400,
     );
   }
+  // Merge-edit, never regenerate: an upsert replaces only the keys the admin
+  // sent and preserves every other key already in the payload (phase-4
+  // review — a blind replace silently dropped keys like the kundli house
+  // notes alongside the edited title/body).
+  const prevRes = await rest(
+    creds,
+    `content_blocks?block_key=eq.${encodeURIComponent(key)}&lang=eq.${lang}&select=payload`,
+  );
+  // A failed pre-read must NOT degrade into a blind replace ([P1] review
+  // fix) — treating the old payload as {} would silently drop every key the
+  // admin didn't send. Fail the request instead; the admin retries.
+  if (!prevRes.ok) {
+    return c.json(
+      {
+        error: {
+          code: "internal_error",
+          message: "Content block pre-read failed — nothing was written",
+        },
+      },
+      500,
+    );
+  }
+  const prevRows = (await prevRes.json()) as Array<{ payload?: unknown }>;
+  const prevRaw = prevRows[0]?.payload;
+  const prevPayload: Record<string, unknown> =
+    prevRaw && typeof prevRaw === "object" && !Array.isArray(prevRaw)
+      ? (prevRaw as Record<string, unknown>)
+      : {};
+  const incoming = body.payload as Record<string, unknown>;
   const res = await rest(creds, "content_blocks?on_conflict=block_key,lang", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates,return=representation" },
@@ -101,7 +130,7 @@ adminBlocksRoute.put("/admin/content-blocks/:key", async (c) => {
         status,
         // sanitize string VALUES on save too (story [R9]) — same scrub the
         // markdown path gets; keys, numbers, booleans pass through untouched
-        payload: sanitizeDeep(body.payload),
+        payload: sanitizeDeep({ ...prevPayload, ...incoming }),
         updated_at: new Date().toISOString(),
       },
     ]),

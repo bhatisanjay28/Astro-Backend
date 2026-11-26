@@ -178,11 +178,17 @@ describe("PUT /api/v1/admin/content-blocks/:key (upsert)", () => {
     expect(noPayload.status).toBe(400);
   });
 
-  it("upserts with merge-duplicates on (block_key, lang) and returns the row", async () => {
+  it("upserts with merge-duplicates on (block_key, lang) and MERGES the payload", async () => {
     mockSupabase((url, init) => {
       if (url.includes("/rest/v1/admin_users") || url.includes("/auth/v1/user"))
         return identityOk(url);
       if (url.includes("/rest/v1/content_blocks")) {
+        if ((init?.method ?? "GET") === "GET") {
+          // phase-4 merge-edit: PUT reads the previous payload first
+          return json([
+            { block_key: "kundli.lagna", lang: "en", payload: { keep: "existing", title: "Old" } },
+          ]);
+        }
         expect(url).toContain("on_conflict=block_key,lang");
         expect(String((init?.headers as Record<string, string>)?.Prefer)).toContain(
           "resolution=merge-duplicates",
@@ -191,7 +197,12 @@ describe("PUT /api/v1/admin/content-blocks/:key (upsert)", () => {
         expect(sent[0]?.block_key).toBe("kundli.lagna");
         expect(sent[0]?.lang).toBe("en");
         expect(sent[0]?.status).toBe("published");
-        return json([{ block_key: "kundli.lagna", lang: "en", payload: sent[0]?.payload }]);
+        const payload = sent[0]?.payload as Record<string, unknown>;
+        // merge-edit: sent keys win, previous keys survive
+        expect(payload.title).toBe("Lagna");
+        expect(payload.body).toBe("The ascendant…");
+        expect(payload.keep).toBe("existing");
+        return json([{ block_key: "kundli.lagna", lang: "en", payload }]);
       }
       return undefined;
     });
@@ -205,16 +216,19 @@ describe("PUT /api/v1/admin/content-blocks/:key (upsert)", () => {
       BINDINGS,
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { data: { payload: { title: string } } };
+    const body = (await res.json()) as { data: { payload: Record<string, unknown> } };
     expect(body.data.payload.title).toBe("Lagna");
+    expect(body.data.payload.keep).toBe("existing");
   });
 
   it("500s when the Supabase write fails", async () => {
     mockSupabase((url, init) => {
       if (url.includes("/rest/v1/admin_users") || url.includes("/auth/v1/user"))
         return identityOk(url);
-      if (url.includes("/rest/v1/content_blocks") && init?.method === "POST")
+      if (url.includes("/rest/v1/content_blocks")) {
+        if ((init?.method ?? "GET") === "GET") return json([]); // no previous block
         return json({ msg: "db down" }, 500);
+      }
       return undefined;
     });
     const res = await app.request(
@@ -227,6 +241,31 @@ describe("PUT /api/v1/admin/content-blocks/:key (upsert)", () => {
       BINDINGS,
     );
     expect(res.status).toBe(500);
+  });
+
+  it("fails the PUT without writing when the pre-read fails — merge must not degrade to a blind replace", async () => {
+    let wrote = false;
+    mockSupabase((url, init) => {
+      if (url.includes("/rest/v1/admin_users") || url.includes("/auth/v1/user"))
+        return identityOk(url);
+      if (url.includes("/rest/v1/content_blocks")) {
+        if ((init?.method ?? "GET") === "GET") return new Response("nope", { status: 500 });
+        wrote = true;
+        return json([{ block_key: "kundli.lagna" }], 201);
+      }
+      return undefined;
+    });
+    const res = await app.request(
+      "/api/v1/admin/content-blocks/kundli.lagna",
+      authed({
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ payload: { title: "Only key sent" } }),
+      }),
+      BINDINGS,
+    );
+    expect(res.status).toBe(500);
+    expect(wrote).toBe(false);
   });
 });
 

@@ -111,7 +111,7 @@ directoryRoute.get("/astrologers", async (c) => {
   const rows = await restGet<AstrologerRow>(
     supabaseUrl,
     serviceKey,
-    "astrologers?is_active=eq.true&order=sort_order.asc&select=slug,name,title,about,expertise,languages,experience_years,price_per_minute,session_types,is_available,availability_label,is_sample",
+    "astrologers?is_active=eq.true&listing_consent_confirmed_at=not.is.null&deleted_at=is.null&order=sort_order.asc&select=slug,name,title,about,expertise,languages,experience_years,price_per_minute,session_types,is_available,availability_label,is_sample",
   );
   if (!rows.ok) return failed(c, "Astrologer");
   return c.json({ data: { astrologers: rows.rows.map(astrologerJson) } });
@@ -125,7 +125,7 @@ directoryRoute.get("/astrologers/:slug", async (c) => {
   const rows = await restGet<AstrologerRow>(
     supabaseUrl,
     serviceKey,
-    `astrologers?is_active=eq.true&slug=eq.${encodeURIComponent(slug)}&select=slug,name,title,about,expertise,languages,experience_years,price_per_minute,session_types,is_available,availability_label,is_sample`,
+    `astrologers?is_active=eq.true&listing_consent_confirmed_at=not.is.null&deleted_at=is.null&slug=eq.${encodeURIComponent(slug)}&select=slug,name,title,about,expertise,languages,experience_years,price_per_minute,session_types,is_available,availability_label,is_sample`,
   );
   if (!rows.ok) return failed(c, "Astrologer");
   const row = rows.rows[0];
@@ -144,7 +144,7 @@ directoryRoute.get("/pujas", async (c) => {
   const rows = await restGet<PujaRow>(
     supabaseUrl,
     serviceKey,
-    `pujas?is_active=eq.true&order=sort_order.asc&select=slug,name,name_hi,category,purpose,description,duration,mode,includes,sample_price,muhurat_note,is_sample${filter}`,
+    `pujas?is_active=eq.true&deleted_at=is.null&order=sort_order.asc&select=slug,name,name_hi,category,purpose,description,duration,mode,includes,sample_price,muhurat_note,is_sample${filter}`,
   );
   if (!rows.ok) return failed(c, "Poojan");
   return c.json({ data: { pujas: rows.rows.map(pujaJson) } });
@@ -158,7 +158,7 @@ directoryRoute.get("/pujas/:slug", async (c) => {
   const rows = await restGet<PujaRow>(
     supabaseUrl,
     serviceKey,
-    `pujas?is_active=eq.true&slug=eq.${encodeURIComponent(slug)}&select=slug,name,name_hi,category,purpose,description,duration,mode,includes,sample_price,muhurat_note,is_sample`,
+    `pujas?is_active=eq.true&deleted_at=is.null&slug=eq.${encodeURIComponent(slug)}&select=slug,name,name_hi,category,purpose,description,duration,mode,includes,sample_price,muhurat_note,is_sample`,
   );
   if (!rows.ok) return failed(c, "Poojan");
   const row = rows.rows[0];

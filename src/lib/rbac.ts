@@ -50,6 +50,8 @@ export const CAPABILITIES = [
   // astrologers & poojas
   "catalog.read",
   "catalog.write",
+  // irreversible catalog hard-delete — super_admin only (posts.purge precedent)
+  "catalog.purge",
   // inbox (requests + messages)
   "inbox.read",
   "inbox.write",
@@ -65,6 +67,9 @@ export const CAPABILITIES = [
   "newsletter.write",
   "newsletter.export",
   "newsletter.delete",
+  // horoscope row delete (content regeneration makes soft delete unnecessary,
+  // but dropping a row is irreversible) — admin+ only, NOT content_editor
+  "horoscope.delete",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -91,10 +96,15 @@ const EDITOR_TIER: readonly Capability[] = [
 export const ROLE_CAPABILITIES: Record<AdminRole, readonly Capability[]> = {
   super_admin: CAPABILITIES,
   // admin = everything operational EXCEPT user management, engine settings
-  // and permanent blog purges (owner rule: irreversible deletion is
-  // super_admin-only — phase-3 story [R4]).
+  // and irreversible purges (owner rule: irreversible deletion is
+  // super_admin-only — phase-3 story [R4]; phase-4 [R6] extends it to
+  // catalog.purge).
   admin: CAPABILITIES.filter(
-    (cap) => cap !== "users.manage" && cap !== "settings.engine" && cap !== "posts.purge",
+    (cap) =>
+      cap !== "users.manage" &&
+      cap !== "settings.engine" &&
+      cap !== "posts.purge" &&
+      cap !== "catalog.purge",
   ),
   content_editor: EDITOR_TIER,
   booking_manager: [
