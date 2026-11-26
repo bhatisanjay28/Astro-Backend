@@ -506,7 +506,24 @@ for (const [kind, columns, fields, validate, isAstro] of [
     // Record so the consent write (astrologers only) type-checks in the
     // shared route loop — the picked type omits it for pujas
     const patch: Record<string, unknown> = { ...picked, updated_at: new Date().toISOString() };
-    if (!isAstro) applyDakshinaRule(patch);
+    if (!isAstro) {
+      // closeout C2: exclusivity spans PATCHes — when the patch doesn't
+      // carry the flag, the stored flag still governs the price. The rule
+      // runs on a merged candidate; only a rule-nulled price is copied back,
+      // and only when the patch touched price or flag (a `{name}`-only PATCH
+      // changes neither field). The folded flag itself is never written.
+      const candidate: Record<string, unknown> = {
+        ...patch,
+        dakshina_on_request: patch.dakshina_on_request ?? before.dakshina_on_request,
+      };
+      applyDakshinaRule(candidate);
+      if (
+        candidate.sample_price === null &&
+        (patch.sample_price !== undefined || patch.dakshina_on_request !== undefined)
+      ) {
+        patch.sample_price = null;
+      }
+    }
     const consent = consentValue(input);
     if (isAstro && consent.value !== undefined) patch.listing_consent_confirmed_at = consent.value;
     const res = await rest(creds, `${kind}?id=eq.${encodeURIComponent(id)}`, {

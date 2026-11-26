@@ -19,7 +19,7 @@ export const adminStatsRoute = new Hono<Env>();
 
 interface StatsShape {
   posts: { published: number; draft: number; trashed: number };
-  astrologers: { active: number; inactive: number };
+  astrologers: { active: number; inactive: number; unconsented: number };
   pujas: { active: number };
   inbox: { new: number; older_24h: number; scheduled_today: number; closed_7d: number };
   subscribers: { confirmed: number; unsubscribed: number; active: number };
@@ -45,6 +45,7 @@ async function gather(
     postsTrashed,
     astroActive,
     astroInactive,
+    astroUnconsented,
     pujasActive,
     inboxNewC,
     inboxNewP,
@@ -65,6 +66,11 @@ async function gather(
     // phase 4 [R5]: soft-deleted catalog rows leave every count
     one("astrologers?select=id&is_active=eq.true&deleted_at=is.null"),
     one("astrologers?select=id&is_active=eq.false&deleted_at=is.null"),
+    // closeout C1 (phase-2 review #9): active but consent-NULL = unlisted
+    // from the public directory — the dashboard must say so (0018 column)
+    one(
+      "astrologers?select=id&listing_consent_confirmed_at=is.null&is_active=eq.true&deleted_at=is.null",
+    ),
     one("pujas?select=id&is_active=eq.true&deleted_at=is.null"),
     // inbox.new = unarchived, non-test, status=new across both request kinds
     one("consultation_requests?select=id&status=eq.new&is_test=eq.false&archived_at=is.null"),
@@ -98,7 +104,7 @@ async function gather(
 
   return {
     posts: { published: postsPublished, draft: postsDraft, trashed: postsTrashed },
-    astrologers: { active: astroActive, inactive: astroInactive },
+    astrologers: { active: astroActive, inactive: astroInactive, unconsented: astroUnconsented },
     pujas: { active: pujasActive },
     inbox: {
       new: inboxNewC + inboxNewP,

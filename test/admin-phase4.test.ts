@@ -596,6 +596,109 @@ describe("admin catalog (phase 4)", () => {
     expect(seen?.sample_price).toBeNull();
   });
 
+  it("closeout C2: a price-only cross-PATCH on a flagged row nulls the price and writes no flag", async () => {
+    let seen: Record<string, unknown> | undefined;
+    let audit: { details?: { fields?: string[] } } | undefined;
+    mockAll((url, init) => {
+      if (url.includes("/rest/v1/pujas?id=eq.p1&select=*")) {
+        return json([{ id: "p1", slug: "p", dakshina_on_request: true, sample_price: null }]);
+      }
+      if (url.includes("/rest/v1/pujas?id=eq.p1") && init?.method === "PATCH") {
+        seen = JSON.parse(init.body as string) as Record<string, unknown>;
+        return json([{ id: "p1" }]);
+      }
+      // closeout review #1: audit fields are computed POST-guard — the
+      // price-only PATCH must list exactly what the client sent (AC 3)
+      if (url.includes("/rest/v1/audit_log") && init?.method === "POST") {
+        audit = JSON.parse(init.body as string) as { details?: { fields?: string[] } };
+        return json({});
+      }
+      return identityAs("admin")(url, init);
+    });
+    const res = await app.request("/api/v1/admin/pujas/p1", patch({ sample_price: 500 }), BINDINGS);
+    expect(res.status).toBe(200);
+    expect(seen?.sample_price).toBeNull();
+    expect("dakshina_on_request" in (seen ?? {})).toBe(false);
+    expect(audit?.details?.fields).toEqual(["sample_price"]);
+  });
+
+  it("closeout C2 (review #2): a flag-only PATCH nulls the price and lists it in the audit", async () => {
+    let seen: Record<string, unknown> | undefined;
+    let audit: { details?: { fields?: string[] } } | undefined;
+    mockAll((url, init) => {
+      if (url.includes("/rest/v1/pujas?id=eq.p1&select=*")) {
+        return json([{ id: "p1", slug: "p", dakshina_on_request: false, sample_price: 500 }]);
+      }
+      if (url.includes("/rest/v1/pujas?id=eq.p1") && init?.method === "PATCH") {
+        seen = JSON.parse(init.body as string) as Record<string, unknown>;
+        return json([{ id: "p1" }]);
+      }
+      if (url.includes("/rest/v1/audit_log") && init?.method === "POST") {
+        audit = JSON.parse(init.body as string) as { details?: { fields?: string[] } };
+        return json({});
+      }
+      return identityAs("admin")(url, init);
+    });
+    const res = await app.request(
+      "/api/v1/admin/pujas/p1",
+      patch({ dakshina_on_request: true }),
+      BINDINGS,
+    );
+    expect(res.status).toBe(200);
+    expect(seen?.dakshina_on_request).toBe(true);
+    expect(seen?.sample_price).toBeNull();
+    const fields = audit?.details?.fields ?? [];
+    expect(fields).toContain("dakshina_on_request");
+    expect(fields).toContain("sample_price");
+  });
+
+  it("closeout C2: turning the flag off explicitly preserves the price", async () => {
+    let seen: Record<string, unknown> | undefined;
+    mockAll((url, init) => {
+      if (url.includes("/rest/v1/pujas?id=eq.p1&select=*")) {
+        return json([{ id: "p1", slug: "p", dakshina_on_request: true, sample_price: null }]);
+      }
+      if (url.includes("/rest/v1/pujas?id=eq.p1") && init?.method === "PATCH") {
+        seen = JSON.parse(init.body as string) as Record<string, unknown>;
+        return json([{ id: "p1" }]);
+      }
+      return identityAs("admin")(url, init);
+    });
+    const res = await app.request(
+      "/api/v1/admin/pujas/p1",
+      patch({ sample_price: 500, dakshina_on_request: false }),
+      BINDINGS,
+    );
+    expect(res.status).toBe(200);
+    expect(seen?.sample_price).toBe(500);
+    expect(seen?.dakshina_on_request).toBe(false);
+  });
+
+  it("closeout C2: a name-only PATCH on a flagged row changes neither field", async () => {
+    let seen: Record<string, unknown> | undefined;
+    let audit: { details?: { fields?: string[] } } | undefined;
+    mockAll((url, init) => {
+      if (url.includes("/rest/v1/pujas?id=eq.p1&select=*")) {
+        return json([{ id: "p1", slug: "p", name: "Old", dakshina_on_request: true }]);
+      }
+      if (url.includes("/rest/v1/pujas?id=eq.p1") && init?.method === "PATCH") {
+        seen = JSON.parse(init.body as string) as Record<string, unknown>;
+        return json([{ id: "p1" }]);
+      }
+      if (url.includes("/rest/v1/audit_log") && init?.method === "POST") {
+        audit = JSON.parse(init.body as string) as { details?: { fields?: string[] } };
+        return json({});
+      }
+      return identityAs("admin")(url, init);
+    });
+    const res = await app.request("/api/v1/admin/pujas/p1", patch({ name: "Renamed" }), BINDINGS);
+    expect(res.status).toBe(200);
+    expect(seen?.name).toBe("Renamed");
+    expect("sample_price" in (seen ?? {})).toBe(false);
+    expect("dakshina_on_request" in (seen ?? {})).toBe(false);
+    expect(audit?.details?.fields).toEqual(["name"]);
+  });
+
   it("soft-deletes by default and restores from trash", async () => {
     let seen: Record<string, unknown> | undefined;
     mockAll((url, init) => {

@@ -712,6 +712,12 @@ describe("GET /admin/stats (the dashboard stops lying)", () => {
           return respond(1); // trashed
         }
         if (url.includes("/rest/v1/astrologers?")) {
+          // closeout C1: the unconsented query also contains is_active=eq.true —
+          // branch on the consent param FIRST
+          if (url.includes("listing_consent_confirmed_at=is.null")) {
+            urls.push(url);
+            return respond(2); // distinct from active=3 (review #3: self-diagnostic)
+          }
           return url.includes("is_active=eq.true") ? respond(3) : respond(1);
         }
         if (url.includes("/rest/v1/pujas?")) return respond(5);
@@ -742,7 +748,11 @@ describe("GET /admin/stats (the dashboard stops lying)", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: Record<string, Record<string, number>> };
     expect(body.data.posts).toEqual({ published: 7, draft: 2, trashed: 1 });
-    expect(body.data.astrologers).toEqual({ active: 3, inactive: 1 });
+    expect(body.data.astrologers).toEqual({ active: 3, inactive: 1, unconsented: 2 });
+    // closeout C1: the unconsented count targets active, non-deleted, consent-NULL
+    const unconsented = urls.find((u) => u.includes("listing_consent_confirmed_at=is.null"));
+    expect(unconsented).toContain("is_active=eq.true");
+    expect(unconsented).toContain("deleted_at=is.null");
     expect(body.data.pujas).toEqual({ active: 5 });
     expect(body.data.inbox).toEqual({ new: 3, older_24h: 1, scheduled_today: 2, closed_7d: 2 });
     // phase-4 [R5]: stats also counts still-active subscribers (unsubscribed_at null)
