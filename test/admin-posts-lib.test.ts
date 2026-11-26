@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   canTransition,
   readingMinutes,
+  sanitizeDeep,
   sanitizeMarkdown,
   slugify,
   validatePostInput,
@@ -176,5 +177,69 @@ describe("sanitizeMarkdown (save-time scrub — owner brief)", () => {
     );
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.fields.content_md).toBe("body");
+  });
+});
+
+describe("sanitizeDeep (phase-3 story [R9])", () => {
+  it("scrubs string values at any depth, keys untouched", () => {
+    const out = sanitizeDeep({
+      title: "<script>alert(1)</script>Safe",
+      nested: { body: "<iframe src=javascript:x></iframe>text", keep: 5 },
+      arr: ["<b>ok</b>", { deep: "onerror=payload" }],
+    }) as Record<string, unknown>;
+    expect(out.title).toBe("Safe");
+    expect((out.nested as Record<string, unknown>).keep).toBe(5);
+    expect((out.nested as Record<string, unknown>).body).toBe("text");
+    expect((out.arr as string[])[0]).toBe("<b>ok</b>");
+  });
+
+  it("passes through non-strings (numbers, booleans, nulls)", () => {
+    expect(sanitizeDeep({ n: 3, b: true, z: null })).toEqual({ n: 3, b: true, z: null });
+    expect(sanitizeDeep("plain")).toBe("plain");
+  });
+});
+
+describe("lang validation (migration 0017, story [R2])", () => {
+  it("accepts en/hi and rejects anything else", () => {
+    const en = validatePostInput({ title: "t", content_md: "c", lang: "en" }, "update");
+    expect(en.ok).toBe(true);
+    if (en.ok) expect(en.fields.lang).toBe("en");
+    const hi = validatePostInput({ title: "t", content_md: "c", lang: "hi" }, "update");
+    expect(hi.ok).toBe(true);
+    if (hi.ok) expect(hi.fields.lang).toBe("hi");
+    const bad = validatePostInput({ title: "t", content_md: "c", lang: "fr" }, "update");
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.errors[0]?.field).toBe("lang");
+  });
+
+  it("omitting lang on create leaves it to the DB default", () => {
+    const res = validatePostInput({ title: "t", content_md: "c" }, "create");
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.fields.lang).toBeUndefined();
+  });
+});
+
+describe("publish_at explicit clear (phase-3 review P2)", () => {
+  it('maps "" and null to an explicit null so the editor can unschedule', () => {
+    for (const cleared of ["", null]) {
+      const res = validatePostInput({ publish_at: cleared }, "update");
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.fields.publish_at).toBeNull();
+    }
+  });
+
+  it("still validates real timestamps and rejects garbage", () => {
+    const good = validatePostInput({ publish_at: "2026-01-01T10:00:00Z" }, "update");
+    expect(good.ok).toBe(true);
+    if (good.ok) expect(good.fields.publish_at).toBe("2026-01-01T10:00:00.000Z");
+    const bad = validatePostInput({ publish_at: "not-a-date" }, "update");
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.errors[0]?.field).toBe("publish_at");
+  });
+
+  it("omitting publish_at still means undefined (no change)", () => {
+    const res = validatePostInput({}, "update");
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.fields.publish_at).toBeUndefined();
   });
 });

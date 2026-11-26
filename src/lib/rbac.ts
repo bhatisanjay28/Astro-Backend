@@ -38,6 +38,9 @@ export const CAPABILITIES = [
   "media.read",
   "media.write",
   "media.delete",
+  // hard-delete of a media object still referenced by posts — above
+  // media.delete (content_editor keeps media.delete for orphan cleanup)
+  "media.force_delete",
   "blocks.read",
   "blocks.write",
   // horoscope content
@@ -76,7 +79,7 @@ const EDITOR_TIER: readonly Capability[] = [
   "taxonomy.write",
   "media.read",
   "media.write",
-  "media.delete",
+  "media.delete", // unreferenced deletes; force-delete of referenced media stays admin+ ([R4])
   "blocks.read",
   "blocks.write",
   "horoscope.read",
@@ -87,7 +90,12 @@ const EDITOR_TIER: readonly Capability[] = [
 /** Role → capabilities. Order matters only for readability. */
 export const ROLE_CAPABILITIES: Record<AdminRole, readonly Capability[]> = {
   super_admin: CAPABILITIES,
-  admin: CAPABILITIES.filter((cap) => cap !== "users.manage" && cap !== "settings.engine"),
+  // admin = everything operational EXCEPT user management, engine settings
+  // and permanent blog purges (owner rule: irreversible deletion is
+  // super_admin-only — phase-3 story [R4]).
+  admin: CAPABILITIES.filter(
+    (cap) => cap !== "users.manage" && cap !== "settings.engine" && cap !== "posts.purge",
+  ),
   content_editor: EDITOR_TIER,
   booking_manager: [
     "stats.read",

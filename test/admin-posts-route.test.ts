@@ -245,6 +245,58 @@ describe("PUT /api/v1/admin/posts/:id", () => {
     expect(patch?.reading_minutes).toBe(3);
     expect(patch?.updated_at).toBeTruthy();
   });
+
+  it('publish_at "" is an explicit clear — the PATCH nulls the schedule', async () => {
+    let patch: Record<string, unknown> | undefined;
+    mockSupabase((url, init) => {
+      if (url.includes("/rest/v1/blog_posts?id=eq.post-1&deleted_at=is.null&select=status,slug")) {
+        return json([{ status: "draft", slug: "scheduled-post" }]);
+      }
+      if (url.includes("/rest/v1/blog_posts?id=eq.post-1") && init?.method === "PATCH") {
+        patch = JSON.parse(init.body as string) as Record<string, unknown>;
+        return json([{ ...POST_ROW, ...patch }]);
+      }
+      return identityOk(url);
+    });
+    const res = await app.request(
+      "/api/v1/admin/posts/post-1",
+      authed({
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ publish_at: "" }),
+      }),
+      BINDINGS,
+    );
+    expect(res.status).toBe(200);
+    expect(patch?.publish_at).toBeNull();
+  });
+
+  it("publishing with publish_at explicitly null stamps now (review P2)", async () => {
+    let patch: Record<string, unknown> | undefined;
+    mockSupabase((url, init) => {
+      if (url.includes("/rest/v1/blog_posts?id=eq.post-1&deleted_at=is.null&select=status,slug")) {
+        return json([{ status: "draft", slug: "ready-post" }]);
+      }
+      if (url.includes("/rest/v1/blog_posts?id=eq.post-1") && init?.method === "PATCH") {
+        patch = JSON.parse(init.body as string) as Record<string, unknown>;
+        return json([{ ...POST_ROW, ...patch }]);
+      }
+      return identityOk(url);
+    });
+    const res = await app.request(
+      "/api/v1/admin/posts/post-1",
+      authed({
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "published", publish_at: null }),
+      }),
+      BINDINGS,
+    );
+    expect(res.status).toBe(200);
+    expect(patch?.status).toBe("published");
+    expect(typeof patch?.publish_at).toBe("string");
+    expect(patch?.publish_at).not.toBeNull();
+  });
 });
 
 describe("DELETE /api/v1/admin/posts/:id", () => {
@@ -443,5 +495,164 @@ describe("POST /api/v1/admin/media", () => {
     expect(res.status).toBe(201);
     expect(bucketsCreated).toBe(1);
     expect(uploads).toBe(2);
+  });
+});
+
+describe("GET /api/v1/admin/posts — phase-3 list semantics", () => {
+  const LIST_URL = "/rest/v1/blog_posts?select=";
+
+  it("sort whitelist: known column+order pass, unknown falls back to updated_at.desc", async () => {
+    let seen = "";
+    mockSupabase((url) => {
+      if (url.includes(LIST_URL)) {
+        seen = url;
+        return json([], 200, { "content-range": "*/0" });
+      }
+      return identityOk(url);
+    });
+    await app.request("/api/v1/admin/posts?sort=title&order=asc", authed(), BINDINGS);
+    expect(decodeURIComponent(seen)).toContain("order=title.asc,id.asc");
+
+    seen = "";
+    await app.request("/api/v1/admin/posts?sort=evil_column", authed(), BINDINGS);
+    expect(decodeURIComponent(seen)).toContain("order=updated_at.desc,id.asc");
+
+    seen = "";
+    await app.request("/api/v1/admin/posts?sort=publish_at&order=asc", authed(), BINDINGS);
+    expect(decodeURIComponent(seen)).toContain("order=publish_at.asc.nullslast,id.asc");
+  });
+
+  it("deleted=true is the Trash view (deleted_at=not.is.null)", async () => {
+    let seen = "";
+    mockSupabase((url) => {
+      if (url.includes(LIST_URL)) {
+        seen = url;
+        return json([], 200, { "content-range": "*/0" });
+      }
+      return identityOk(url);
+    });
+    await app.request("/api/v1/admin/posts?deleted=true", authed(), BINDINGS);
+    expect(seen).toContain("deleted_at=not.is.null");
+  });
+
+  it("lang and category_id (UUID-checked) pass through as filters", async () => {
+    let seen = "";
+    mockSupabase((url) => {
+      if (url.includes(LIST_URL)) {
+        seen = url;
+        return json([], 200, { "content-range": "*/0" });
+      }
+      return identityOk(url);
+    });
+    const uuid = "aaaaaaa2-0000-4000-8000-000000000002";
+    await app.request(`/api/v1/admin/posts?lang=hi&category_id=${uuid}`, authed(), BINDINGS);
+    expect(seen).toContain("lang=eq.hi");
+    expect(seen).toContain(`category_id=eq.${uuid}`);
+
+    seen = "";
+    await app.request("/api/v1/admin/posts?category_id=not-a-uuid", authed(), BINDINGS);
+    expect(seen).not.toContain("category_id=eq.");
+  });
+
+  it("manual-joins category + author names (no PostgREST embed, [R1])", async () => {
+    mockSupabase((url) => {
+      if (url.includes(LIST_URL)) {
+        return json(
+          [
+            {
+              id: "p-1",
+              slug: "with-both",
+              title: "Both",
+              category_id: "cat-1",
+              author_id: "user-9",
+            },
+            { id: "p-2", slug: "with-none", title: "None", category_id: null, author_id: null },
+          ],
+          200,
+          { "content-range": "0-1/2" },
+        );
+      }
+      if (url.includes("blog_categories?id=in.(cat-1)")) {
+        return json([{ id: "cat-1", slug: "basics", name: "Basics" }]);
+      }
+      if (url.includes("admin_users?user_id=in.(user-9)")) {
+        return json([{ user_id: "user-9", display_name: "Pandit Ji" }]);
+      }
+      return identityOk(url);
+    });
+    const res = await app.request("/api/v1/admin/posts", authed(), BINDINGS);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      data: { posts: Array<Record<string, unknown>> };
+    };
+    expect(body.data.posts[0]?.category).toEqual({ name: "Basics", slug: "basics" });
+    expect(body.data.posts[0]?.author).toEqual({ display_name: "Pandit Ji" });
+    expect(body.data.posts[1]?.category).toBeNull();
+    expect(body.data.posts[1]?.author).toBeNull();
+  });
+
+  it("create rejects an out-of-whitelist lang ([R2])", async () => {
+    mockSupabase(identityOk);
+    const res = await app.request(
+      "/api/v1/admin/posts",
+      authed({
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: "T", content_md: "B", lang: "fr" }),
+      }),
+      BINDINGS,
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { details: Array<{ field: string }> } };
+    expect(body.error.details[0]?.field).toBe("lang");
+  });
+
+  it("create persists an explicit lang", async () => {
+    let row: Record<string, unknown> | undefined;
+    mockSupabase((url, init) => {
+      if (url.includes("/rest/v1/blog_posts?slug=eq.")) return json([]);
+      if (url.includes("/rest/v1/blog_posts") && init?.method === "POST") {
+        row = JSON.parse(init.body as string) as Record<string, unknown>;
+        return json([{ ...POST_ROW, ...row }], 201);
+      }
+      return identityOk(url);
+    });
+    const res = await app.request(
+      "/api/v1/admin/posts",
+      authed({
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: "Namaste", content_md: "Body", lang: "hi" }),
+      }),
+      BINDINGS,
+    );
+    expect(res.status).toBe(201);
+    expect(row?.lang).toBe("hi");
+  });
+
+  it("PUT published→draft without explicit publish_at clears the stale schedule ([R3])", async () => {
+    let patch: Record<string, unknown> | undefined;
+    mockSupabase((url, init) => {
+      if (url.includes("/rest/v1/blog_posts?id=eq.post-1&deleted_at=is.null&select=status,slug")) {
+        return json([{ status: "published", slug: "published-post" }]);
+      }
+      if (url.includes("/rest/v1/blog_posts?id=eq.post-1") && init?.method === "PATCH") {
+        patch = JSON.parse(init.body as string) as Record<string, unknown>;
+        return json([{ ...POST_ROW, ...patch }]);
+      }
+      return identityOk(url);
+    });
+    const res = await app.request(
+      "/api/v1/admin/posts/post-1",
+      authed({
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "draft" }),
+      }),
+      BINDINGS,
+    );
+    expect(res.status).toBe(200);
+    expect(patch?.status).toBe("draft");
+    expect(patch?.publish_at).toBeNull();
   });
 });

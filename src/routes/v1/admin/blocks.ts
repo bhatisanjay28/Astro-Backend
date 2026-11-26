@@ -9,6 +9,7 @@
 import { Hono } from "hono";
 import type { AppEnvWithAdmin } from "../../../env";
 import { writeAudit } from "../../../lib/audit";
+import { sanitizeDeep } from "../../../lib/posts";
 import { rest, supabaseCreds } from "../../../lib/supabase";
 
 type Env = AppEnvWithAdmin;
@@ -94,7 +95,15 @@ adminBlocksRoute.put("/admin/content-blocks/:key", async (c) => {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates,return=representation" },
     body: JSON.stringify([
-      { block_key: key, lang, status, payload: body.payload, updated_at: new Date().toISOString() },
+      {
+        block_key: key,
+        lang,
+        status,
+        // sanitize string VALUES on save too (story [R9]) — same scrub the
+        // markdown path gets; keys, numbers, booleans pass through untouched
+        payload: sanitizeDeep(body.payload),
+        updated_at: new Date().toISOString(),
+      },
     ]),
   });
   if (!res.ok)

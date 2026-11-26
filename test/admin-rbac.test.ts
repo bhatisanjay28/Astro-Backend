@@ -111,11 +111,14 @@ describe("permission matrix (02 §C, pinned)", () => {
     }
   });
 
-  it("admin holds everything except users.manage and settings.engine", () => {
+  it("admin holds everything except users.manage, settings.engine and posts.purge", () => {
     expect(roleCan("admin", "users.manage")).toBe(false);
     expect(roleCan("admin", "settings.engine")).toBe(false);
+    // phase-3 story [R4]: permanent blog purges are super_admin-only
+    expect(roleCan("admin", "posts.purge")).toBe(false);
+    expect(roleCan("admin", "media.force_delete")).toBe(true);
     for (const cap of CAPABILITIES) {
-      if (cap === "users.manage" || cap === "settings.engine") continue;
+      if (cap === "users.manage" || cap === "settings.engine" || cap === "posts.purge") continue;
       expect(roleCan("admin", cap)).toBe(true);
     }
   });
@@ -129,6 +132,7 @@ describe("permission matrix (02 §C, pinned)", () => {
     expect(has("taxonomy.write")).toBe(true);
     expect(has("tags.merge")).toBe(false);
     expect(has("media.delete")).toBe(true);
+    expect(has("media.force_delete")).toBe(false); // referenced deletes stay admin+ ([R4])
     expect(has("blocks.write")).toBe(true);
     expect(has("horoscope.write")).toBe(true);
     expect(has("horoscope.regenerate")).toBe(false);

@@ -39,6 +39,27 @@ export function sanitizeMarkdown(md: string): string {
     .replace(DANGEROUS_URL, '$1"#"');
 }
 
+/**
+ * Save-time scrub for structured JSON payloads (content_blocks PUT): walks
+ * objects/arrays and runs every string VALUE through sanitizeMarkdown,
+ * leaving keys, numbers, booleans and nulls untouched. Defense-in-depth —
+ * the only public consumer of block payloads renders escaped today, but the
+ * store must not become a payload-staging area for scriptable HTML (phase-3
+ * story [R9]).
+ */
+export function sanitizeDeep(value: unknown): unknown {
+  if (typeof value === "string") return sanitizeMarkdown(value);
+  if (Array.isArray(value)) return value.map((v) => sanitizeDeep(v));
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = sanitizeDeep(v);
+    }
+    return out;
+  }
+  return value;
+}
+
 export function slugify(input: string): string {
   return input
     .normalize("NFKD")
@@ -63,6 +84,8 @@ export type PostInput = {
   content_md?: unknown;
   excerpt?: unknown;
   status?: unknown;
+  /** edition language (migration 0017); omitted on create → DB default 'en' */
+  lang?: unknown;
   publish_at?: unknown;
   category?: unknown;
   tags?: unknown;
@@ -143,7 +166,23 @@ export function validatePostInput(
     fields.status = "draft";
   }
 
-  if (input.publish_at !== undefined && input.publish_at !== null) {
+  // Edition language (migration 0017). Not whitelisted = silently dropped by
+  // the PATCH builder, so the editor's EN/HI toggle would write nothing —
+  // story [R2]. Omitted on create → DB default 'en'.
+  if (input.lang !== undefined) {
+    const lang = typeof input.lang === "string" ? input.lang.trim() : "";
+    if (lang !== "en" && lang !== "hi") {
+      errors.push({ field: "lang", message: "lang must be en or hi" });
+    } else {
+      fields.lang = lang;
+    }
+  }
+
+  // publish_at: "" / null is an EXPLICIT clear of the schedule (phase-3
+  // review P2) — the editor sends it when the date field is emptied.
+  if (input.publish_at === "" || input.publish_at === null) {
+    fields.publish_at = null;
+  } else if (input.publish_at !== undefined) {
     const ts = typeof input.publish_at === "string" ? input.publish_at : "";
     const date = new Date(ts);
     if (!ts || Number.isNaN(date.getTime())) {
