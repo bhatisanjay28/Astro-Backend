@@ -13,6 +13,7 @@
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../env";
+import { captchaRequired, verifyTurnstile } from "../../lib/turnstile";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const SOURCES = new Set(["gemstones_notify", "weekly_panchang", "website"]);
@@ -40,14 +41,14 @@ export const newsletterRoute = new Hono<AppEnv>();
 
 newsletterRoute.post("/newsletter", async (c) => {
   const ip = c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for") ?? "unknown";
-  if (throttled(ip)) {
+  if (!c.env?.RATE_LIMIT_DISABLED && throttled(ip)) {
     return c.json(
       { error: { code: "rate_limited", message: "Too many requests. Try again later." } },
       429,
     );
   }
 
-  let body: { email?: unknown; source?: unknown };
+  let body: { email?: unknown; source?: unknown; turnstile_token?: unknown };
   try {
     body = await c.req.json();
   } catch {
@@ -73,6 +74,10 @@ newsletterRoute.post("/newsletter", async (c) => {
       },
       400,
     );
+  }
+
+  if (!(await verifyTurnstile(body.turnstile_token, ip, c.env?.TURNSTILE_SECRET_KEY))) {
+    return c.json(captchaRequired(), 400);
   }
 
   const supabaseUrl = c.env?.SUPABASE_URL;

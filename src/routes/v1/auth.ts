@@ -14,6 +14,7 @@ import { Hono } from "hono";
 import type { AppEnv } from "../../env";
 import { decodeJwtPayload } from "../../lib/admin-auth";
 import { writeAudit } from "../../lib/audit";
+import { captchaRequired, verifyTurnstile } from "../../lib/turnstile";
 
 type Env = AppEnv;
 
@@ -55,7 +56,11 @@ authRoute.post("/auth/login", async (c) => {
       503,
     );
   }
-  const body = (await c.req.json().catch(() => ({}))) as { email?: unknown; password?: unknown };
+  const body = (await c.req.json().catch(() => ({}))) as {
+    email?: unknown;
+    password?: unknown;
+    turnstile_token?: unknown;
+  };
   if (
     typeof body.email !== "string" ||
     typeof body.password !== "string" ||
@@ -66,6 +71,10 @@ authRoute.post("/auth/login", async (c) => {
       { error: { code: "validation_error", message: "email and password are required" } },
       400,
     );
+  }
+  const ip = c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for") ?? "unknown";
+  if (!(await verifyTurnstile(body.turnstile_token, ip, c.env?.TURNSTILE_SECRET_KEY))) {
+    return c.json(captchaRequired(), 400);
   }
   const res = await grant(creds0.url, creds0.key, { email: body.email, password: body.password });
   const data = (await res.json().catch(() => ({}))) as SupabaseAuthResponse;

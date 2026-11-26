@@ -19,6 +19,13 @@ export type Bindings = {
    * cities table (same response shape). */
   GOOGLE_PLACES_API_KEY?: string;
   /**
+   * Cloudflare Turnstile widget secret — bot protection on the anonymous
+   * write endpoints (/auth/login, /requests/*, /newsletter). Unset → the
+   * verification is skipped (local dev / tests / arming window); the public
+   * counterpart PUBLIC_TURNSTILE_SITE_KEY bakes into the Pages build.
+   */
+  TURNSTILE_SECRET_KEY?: string;
+  /**
    * Optional CF Pages deploy hook — the horoscope cron pings it after a
    * publishing run and the admin nav route pings it after a nav config
    * save, so the static frontend rebuilds with the fresh data (build-time

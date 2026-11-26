@@ -2,11 +2,13 @@
  * POST /api/v1/requests/consultation and POST /api/v1/requests/puja —
  * Epic 5.2/5.3 booking-request endpoints. Anon inserts into the
  * consultation_requests / puja_requests tables (RLS: anon can insert own).
- * Phone/email validation + same-isolate throttle; admin notify + Turnstile
- * hardening arrive with 6.4/7.2.
+ * Phone/email validation + same-isolate throttle + Turnstile bot check
+ * (admin brief; skipped while TURNSTILE_SECRET_KEY is unset). Admin notify
+ * stays with 6.4.
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../env";
+import { captchaRequired, verifyTurnstile } from "../../lib/turnstile";
 
 const PHONE_RE = /^[+\d][\d\s\-()]{6,19}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -72,6 +74,7 @@ requestsRoute.post("/requests/consultation", async (c) => {
     );
   }
   let body: PersonBody & {
+    turnstile_token?: unknown;
     astrologer_slug?: unknown;
     topic?: unknown;
     preferred_date?: unknown;
@@ -91,6 +94,9 @@ requestsRoute.post("/requests/consultation", async (c) => {
       { error: { code: "validation_error", message: "Validation failed", details: problems } },
       400,
     );
+  }
+  if (!(await verifyTurnstile(body.turnstile_token, ip, c.env?.TURNSTILE_SECRET_KEY))) {
+    return c.json(captchaRequired(), 400);
   }
 
   const supabaseUrl = c.env?.SUPABASE_URL;
@@ -184,6 +190,7 @@ requestsRoute.post("/requests/puja", async (c) => {
     );
   }
   let body: PersonBody & {
+    turnstile_token?: unknown;
     puja_slug?: unknown;
     gotra?: unknown;
     date?: unknown;
@@ -201,6 +208,9 @@ requestsRoute.post("/requests/puja", async (c) => {
       { error: { code: "validation_error", message: "Validation failed", details: problems } },
       400,
     );
+  }
+  if (!(await verifyTurnstile(body.turnstile_token, ip, c.env?.TURNSTILE_SECRET_KEY))) {
+    return c.json(captchaRequired(), 400);
   }
 
   const supabaseUrl = c.env?.SUPABASE_URL;
