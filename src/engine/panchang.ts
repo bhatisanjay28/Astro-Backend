@@ -25,12 +25,16 @@ import { type HoraSlot, horaDay } from "./hora";
 import {
   daySegmentTables,
   karanaName,
+  karanaNameHi,
   NAKSHATRAS,
   NAKSHATRAS_HI,
+  SEGMENTS_HI,
   TITHIS,
+  TITHIS_HI,
   VAARS,
   VAARS_HI,
   YOGAS,
+  YOGAS_HI,
 } from "./names";
 
 export interface LimbWindow {
@@ -44,6 +48,7 @@ export interface LimbWindow {
 
 export interface Segment {
   name: string;
+  name_hi?: string;
   start: string;
   end: string;
   verified: boolean;
@@ -66,7 +71,7 @@ export interface ActiveLimbs {
 }
 
 export interface Panchang {
-  city?: { slug: string; name: string };
+  city?: { slug: string; name: string; name_hi?: string };
   date: string;
   timezone: string;
   vedic_day: { sunrise: string; next_sunrise: string; sunset: string };
@@ -99,7 +104,7 @@ export interface Panchang {
   engine_version: string;
 }
 
-export const ENGINE_VERSION = "1.4.0-alpha1";
+export const ENGINE_VERSION = "1.5.0-s24"; // S24: bilingual limb names
 
 const DAY_MS = 86400000;
 const DEG_PER_DAY_ELONGATION = 10; // true ≈ 12.2 — keep below for safe search hops
@@ -235,7 +240,7 @@ export function computePanchang(input: {
   latitude: number;
   longitude: number;
   timezone: string;
-  city?: { slug: string; name: string };
+  city?: { slug: string; name: string; name_hi?: string };
   /** ISO instant to treat as "now" for active-limb picking (tests / replays). */
   nowOverride?: string;
   /** Epic 1.9 — which Amanta/Purnimanta month drives the `primary` display. */
@@ -262,6 +267,7 @@ export function computePanchang(input: {
     30,
     (i) => ({
       name: `${i <= 15 ? "Shukla" : "Krishna"} ${TITHIS[i - 1]}`,
+      name_hi: `${i <= 15 ? "शुक्ल" : "कृष्ण"} ${TITHIS_HI[i - 1] ?? TITHIS[i - 1]}`,
     }),
   );
   const nakshatra = limbWindows(
@@ -285,6 +291,7 @@ export function computePanchang(input: {
     27,
     (i) => ({
       name: YOGAS[i - 1] ?? "Vishkambha",
+      name_hi: YOGAS_HI[i - 1] ?? YOGAS[i - 1] ?? "Vishkambha",
     }),
   );
   const karana = limbWindows(
@@ -296,6 +303,7 @@ export function computePanchang(input: {
     60,
     (i) => ({
       name: karanaName(i - 1),
+      name_hi: karanaNameHi(i - 1),
     }),
   );
 
@@ -310,7 +318,14 @@ export function computePanchang(input: {
     "Proportional 1/8-day method — widely published traditional tables; PENDING Jyotishi review (P11)";
   const segToObj = (part: number, name: string): Segment => {
     const w = seg(part);
-    return { name, start: iso(w.start), end: iso(w.end), verified: false, source: SOURCE_SEG };
+    return {
+      name,
+      name_hi: SEGMENTS_HI[name] ?? name,
+      start: iso(w.start),
+      end: iso(w.end),
+      verified: false,
+      source: SOURCE_SEG,
+    };
   };
 
   // Abhijit: 1/8-day window centered on solar noon; Brahma: 14th–15th muhurta before sunrise
@@ -318,6 +333,7 @@ export function computePanchang(input: {
   const halfSeg = daySpan / 16;
   const abhijit: Segment = {
     name: "Abhijit Muhurat",
+    name_hi: "अभिजीत मुहूर्त",
     start: iso(new Date(noon.getTime() - halfSeg)),
     end: iso(new Date(noon.getTime() + halfSeg)),
     verified: true,
@@ -325,6 +341,7 @@ export function computePanchang(input: {
   };
   const brahma: Segment = {
     name: "Brahma Muhurta",
+    name_hi: "ब्रह्म मुहूर्त",
     start: iso(new Date(sunrise.getTime() - 96 * 60000)),
     end: iso(new Date(sunrise.getTime() - 48 * 60000)),
     verified: true,

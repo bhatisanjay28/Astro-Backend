@@ -11,9 +11,6 @@ import {
   ENGINE_VERSION,
   flames,
   friendshipCompatibility,
-  interpretLoShu,
-  interpretRoot,
-  interpretVehicle,
   loShuGrid,
   loveCompatibility,
   mobileNumerology,
@@ -23,10 +20,18 @@ import {
   vehicleLuckyNumber,
   vehiclePlateAnalyser,
 } from "../../engine";
+import * as ENI from "../../engine/interpretations";
+import * as HII from "../../engine/interpretations-hi";
 import type { AppEnv } from "../../env";
 import { isCalendarDate } from "../../lib/birth";
+import { localizeCalcValues } from "../../lib/localize";
 
 export const calculatorsQuickRoute = new Hono<AppEnv>();
+
+/** S24 — ?lang=hi picks the Hindi interpretation layer + localizes values. */
+const langOf = (c: { req: { query(name: string): string | undefined } }): "hi" | "en" =>
+  c.req.query("lang") === "hi" ? "hi" : "en";
+const interp = (lang: "hi" | "en"): typeof ENI => (lang === "hi" ? (HII as typeof ENI) : ENI);
 
 function badRequest(c: any, message: string, details?: unknown) {
   return c.json({ error: { code: "validation_error", message, details } }, 400);
@@ -54,6 +59,8 @@ const FOR_FUN_META = { note: "Entertainment only — a paper game with no astrol
 
 /** GET /calculators/numerology?date=[&name=] — Mulank/Bhagyank/Namank full shape. */
 calculatorsQuickRoute.get("/calculators/numerology", (c) => {
+  const lang = langOf(c);
+  const I = interp(lang);
   const date = requireDate(c);
   if (!date) return badRequest(c, "date must be a valid YYYY-MM-DD calendar date");
   const nameParam = c.req.query("name");
@@ -63,9 +70,10 @@ calculatorsQuickRoute.get("/calculators/numerology", (c) => {
     if (!name) return badRequest(c, "name must be 1–60 letters (spaces/hyphens allowed)");
     nameResult = nameNumerology(name);
   }
+  const label = (en: string, hi: string): string => (lang === "hi" ? hi : en);
   const destiny = (n: number, label: string) => ({
     value: n,
-    ...interpretRoot(n, label),
+    ...I.interpretRoot(n, label),
   });
   const day = Number(date.slice(8, 10));
   const digits = date.replace(/\D/g, "").split("").map(Number);
@@ -80,48 +88,61 @@ calculatorsQuickRoute.get("/calculators/numerology", (c) => {
   const mulank = dr(day);
   const bhagyank = dr(digits.reduce((a, x) => a + x, 0));
   return c.json({
-    data: {
-      mulank: destiny(mulank, "Mulank"),
-      bhagyank: destiny(bhagyank, "Bhagyank"),
-      name: nameResult
-        ? {
-            sum: nameResult.sum,
-            root: nameResult.root,
-            lord: nameResult.lord,
-            ...interpretRoot(nameResult.root, "Namank"),
-          }
-        : null,
-      engine_version: ENGINE_VERSION,
-    },
+    data: localizeCalcValues(
+      {
+        mulank: destiny(mulank, label("Mulank", "मूलांक")),
+        bhagyank: destiny(bhagyank, label("Bhagyank", "भाग्यांक")),
+        name: nameResult
+          ? {
+              sum: nameResult.sum,
+              root: nameResult.root,
+              lord: nameResult.lord,
+              ...I.interpretRoot(nameResult.root, label("Namank", "नामांक")),
+            }
+          : null,
+        engine_version: ENGINE_VERSION,
+      },
+      lang,
+    ),
   });
 });
 
 /** GET /calculators/lo-shu?date= — 3×3 grid, missing/repeated, 8 lines. */
 calculatorsQuickRoute.get("/calculators/lo-shu", (c) => {
+  const lang = langOf(c);
   const date = requireDate(c);
   if (!date) return badRequest(c, "date must be a valid YYYY-MM-DD calendar date");
   const result = loShuGrid(date);
   return c.json({
-    data: {
-      ...result,
-      interpretation: interpretLoShu(result.missing, result.repeated),
-      engine_version: ENGINE_VERSION,
-    },
+    data: localizeCalcValues(
+      {
+        ...result,
+        interpretation: interp(lang).interpretLoShu(result.missing, result.repeated),
+        engine_version: ENGINE_VERSION,
+      },
+      lang,
+    ),
   });
 });
 
 /** GET /calculators/vehicle-number?date= — lucky vehicle numbers + friend/enemy matrix. */
 calculatorsQuickRoute.get("/calculators/vehicle-number", (c) => {
+  const lang = langOf(c);
   const date = requireDate(c);
   if (!date) return badRequest(c, "date must be a valid YYYY-MM-DD calendar date");
   const result = vehicleLuckyNumber(date);
   return c.json({
-    data: {
-      ...result,
-      interpretation: interpretVehicle("Lucky vehicle numbers"),
-      verified: false,
-      engine_version: ENGINE_VERSION,
-    },
+    data: localizeCalcValues(
+      {
+        ...result,
+        interpretation: interp(lang).interpretVehicle(
+          lang === "hi" ? "शुभ वाहन अंक" : "Lucky vehicle numbers",
+        ),
+        verified: false,
+        engine_version: ENGINE_VERSION,
+      },
+      lang,
+    ),
   });
 });
 
@@ -137,12 +158,16 @@ calculatorsQuickRoute.get("/calculators/vehicle-plate", (c) => {
     return badRequest(c, "plate is required (4–12 alphanumeric characters, e.g. DL8CAF1234)");
   }
   const result = vehiclePlateAnalyser(plate, date);
+  const lang = langOf(c);
   return c.json({
-    data: {
-      ...result,
-      interpretation: interpretVehicle(result.verdict),
-      engine_version: ENGINE_VERSION,
-    },
+    data: localizeCalcValues(
+      {
+        ...result,
+        interpretation: interp(lang).interpretVehicle(result.verdict),
+        engine_version: ENGINE_VERSION,
+      },
+      lang,
+    ),
   });
 });
 
@@ -155,13 +180,20 @@ calculatorsQuickRoute.get("/calculators/mobile-numerology", (c) => {
   }
   const result = mobileNumerology(digits);
   if (result.sum === 0) return badRequest(c, "digits must sum to a positive value");
+  const lang = langOf(c);
   return c.json({
-    data: {
-      ...result,
-      interpretation: interpretRoot(result.root, "Mobile root"),
-      for_fun: true,
-      engine_version: ENGINE_VERSION,
-    },
+    data: localizeCalcValues(
+      {
+        ...result,
+        interpretation: interp(lang).interpretRoot(
+          result.root,
+          lang === "hi" ? "मोबाइल अंक" : "Mobile root",
+        ),
+        for_fun: true,
+        engine_version: ENGINE_VERSION,
+      },
+      lang,
+    ),
   });
 });
 
@@ -180,12 +212,18 @@ calculatorsQuickRoute.get("/calculators/name-numerology", (c) => {
     ownerCompatibility = numberCompatibility(result.root, dateParam);
   }
   return c.json({
-    data: {
-      ...result,
-      owner_compatibility: ownerCompatibility,
-      interpretation: interpretRoot(result.root, "Name root"),
-      engine_version: ENGINE_VERSION,
-    },
+    data: localizeCalcValues(
+      {
+        ...result,
+        owner_compatibility: ownerCompatibility,
+        interpretation: interp(langOf(c)).interpretRoot(
+          result.root,
+          langOf(c) === "hi" ? "नाम अंक" : "Name root",
+        ),
+        engine_version: ENGINE_VERSION,
+      },
+      langOf(c),
+    ),
   });
 });
 
@@ -215,8 +253,12 @@ function twoNames(c: any): { a: string; b: string } | null {
 calculatorsQuickRoute.get("/calculators/name-compatibility", (c) => {
   const names = twoNames(c);
   if (!names) return badRequest(c, "a and b names must be 1–60 letters each");
+  const lang = langOf(c);
   return c.json({
-    data: { ...nameCompatibility(names.a, names.b), for_fun: true, engine_version: ENGINE_VERSION },
+    data: localizeCalcValues(
+      { ...nameCompatibility(names.a, names.b), for_fun: true, engine_version: ENGINE_VERSION },
+      lang,
+    ),
     meta: FOR_FUN_META,
   });
 });

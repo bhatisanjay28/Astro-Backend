@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import app from "../src/app";
+import { ENGINE_VERSION } from "../src/engine/panchang";
 
 /**
  * Epic 3.1b — panchang_cache write-through: city-mode reads hit the cache
@@ -71,7 +72,8 @@ describe("panchang cache write-through", () => {
       if (url.includes("/rest/v1/panchang_cache?city_id=eq.city-1")) {
         return json([
           {
-            payload: { cached: true, engine_version: "test" },
+            payload: { cached: true, engine_version: ENGINE_VERSION },
+            engine_version: ENGINE_VERSION,
             computed_at: "2026-11-19T00:00:00Z",
           },
         ]);
@@ -87,6 +89,64 @@ describe("panchang cache write-through", () => {
     expect(body.meta.cache).toBe("hit");
     expect(body.meta.computed_at).toBe("2026-11-19T00:00:00Z");
     expect(body.data.cached).toBe(true);
+  });
+
+  it("S24: a cache row from an older engine version is treated as a miss (bilingual names)", async () => {
+    let recomputed = false;
+    mockSupabase((url) => {
+      if (url.includes("/rest/v1/cities?")) return json(CITY);
+      if (url.includes("/rest/v1/panchang_cache?city_id=eq.city-1")) {
+        return json([
+          {
+            payload: { cached: true, engine_version: "1.4.0-alpha1" },
+            engine_version: "1.4.0-alpha1",
+            computed_at: "2026-11-19T00:00:00Z",
+          },
+        ]);
+      }
+      if (url.includes("/rest/v1/panchang_cache?on_conflict=city_id,date")) recomputed = true;
+      return undefined;
+    });
+    const res = await app.request("/api/v1/panchang?city=new-delhi&date=2026-11-20", {}, BINDINGS);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { meta: { cache: string }; data: Record<string, unknown> };
+    expect(body.meta.cache).toBe("miss"); // recomputed with the current engine
+    expect(body.data.cached).toBeUndefined();
+    expect(recomputed).toBe(true);
+  });
+
+  it("S24: ?lang=hi localizes names at read time without touching the cache", async () => {
+    mockSupabase((url) => {
+      if (url.includes("/rest/v1/cities?")) return json(CITY);
+      if (url.includes("/rest/v1/panchang_cache?city_id=eq.city-1")) {
+        return json([
+          {
+            payload: {
+              cached: true,
+              engine_version: ENGINE_VERSION,
+              vaar: { name: "Ravivara", name_hi: "रविवार" },
+              tithi: [{ name: "Shukla Purnima", name_hi: "शुक्ल पूर्णिमा" }],
+            },
+            engine_version: ENGINE_VERSION,
+            computed_at: "2026-11-19T00:00:00Z",
+          },
+        ]);
+      }
+      return undefined;
+    });
+    const res = await app.request(
+      "/api/v1/panchang?city=new-delhi&date=2026-11-20&lang=hi",
+      {},
+      BINDINGS,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      meta: { cache: string };
+      data: { vaar: { name: string }; tithi: Array<{ name: string }> };
+    };
+    expect(body.meta.cache).toBe("hit"); // lang-neutral cache
+    expect(body.data.vaar.name).toBe("रविवार");
+    expect(body.data.tithi[0]?.name).toBe("शुक्ल पूर्णिमा");
   });
 });
 

@@ -44,7 +44,9 @@ interface AstrologerRow {
   slug: string;
   name: string;
   title: string | null;
+  title_hi: string | null;
   about: string | null;
+  about_hi: string | null;
   expertise: string[];
   languages: string[];
   experience_years: number | null;
@@ -62,6 +64,7 @@ interface PujaRow {
   category: string;
   purpose: string | null;
   description: string | null;
+  description_hi: string | null;
   duration: string | null;
   mode: string[];
   includes: string[] | null;
@@ -75,7 +78,9 @@ function astrologerJson(a: AstrologerRow) {
     slug: a.slug,
     name: a.name,
     title: a.title ?? "",
+    title_hi: a.title_hi,
     about: a.about ?? "",
+    about_hi: a.about_hi,
     expertise: a.expertise ?? [],
     languages: a.languages ?? [],
     experience_years: a.experience_years,
@@ -95,6 +100,7 @@ function pujaJson(p: PujaRow) {
     category: p.category,
     purpose: p.purpose ?? "",
     description: p.description ?? "",
+    description_hi: p.description_hi,
     duration_label: p.duration ?? "",
     mode: p.mode ?? [],
     includes: p.includes ?? [],
@@ -111,7 +117,7 @@ directoryRoute.get("/astrologers", async (c) => {
   const rows = await restGet<AstrologerRow>(
     supabaseUrl,
     serviceKey,
-    "astrologers?is_active=eq.true&listing_consent_confirmed_at=not.is.null&deleted_at=is.null&order=sort_order.asc&select=slug,name,title,about,expertise,languages,experience_years,price_per_minute,session_types,is_available,availability_label,is_sample",
+    "astrologers?is_active=eq.true&listing_consent_confirmed_at=not.is.null&deleted_at=is.null&order=sort_order.asc&select=slug,name,title,title_hi,about,about_hi,expertise,languages,experience_years,price_per_minute,session_types,is_available,availability_label,is_sample",
   );
   if (!rows.ok) return failed(c, "Astrologer");
   return c.json({ data: { astrologers: rows.rows.map(astrologerJson) } });
@@ -125,7 +131,7 @@ directoryRoute.get("/astrologers/:slug", async (c) => {
   const rows = await restGet<AstrologerRow>(
     supabaseUrl,
     serviceKey,
-    `astrologers?is_active=eq.true&listing_consent_confirmed_at=not.is.null&deleted_at=is.null&slug=eq.${encodeURIComponent(slug)}&select=slug,name,title,about,expertise,languages,experience_years,price_per_minute,session_types,is_available,availability_label,is_sample`,
+    `astrologers?is_active=eq.true&listing_consent_confirmed_at=not.is.null&deleted_at=is.null&slug=eq.${encodeURIComponent(slug)}&select=slug,name,title,title_hi,about,about_hi,expertise,languages,experience_years,price_per_minute,session_types,is_available,availability_label,is_sample`,
   );
   if (!rows.ok) return failed(c, "Astrologer");
   const row = rows.rows[0];
@@ -144,7 +150,7 @@ directoryRoute.get("/pujas", async (c) => {
   const rows = await restGet<PujaRow>(
     supabaseUrl,
     serviceKey,
-    `pujas?is_active=eq.true&deleted_at=is.null&order=sort_order.asc&select=slug,name,name_hi,category,purpose,description,duration,mode,includes,sample_price,muhurat_note,is_sample${filter}`,
+    `pujas?is_active=eq.true&deleted_at=is.null&order=sort_order.asc&select=slug,name,name_hi,category,purpose,description,description_hi,duration,mode,includes,sample_price,muhurat_note,is_sample${filter}`,
   );
   if (!rows.ok) return failed(c, "Poojan");
   return c.json({ data: { pujas: rows.rows.map(pujaJson) } });
@@ -158,7 +164,7 @@ directoryRoute.get("/pujas/:slug", async (c) => {
   const rows = await restGet<PujaRow>(
     supabaseUrl,
     serviceKey,
-    `pujas?is_active=eq.true&deleted_at=is.null&slug=eq.${encodeURIComponent(slug)}&select=slug,name,name_hi,category,purpose,description,duration,mode,includes,sample_price,muhurat_note,is_sample`,
+    `pujas?is_active=eq.true&deleted_at=is.null&slug=eq.${encodeURIComponent(slug)}&select=slug,name,name_hi,category,purpose,description,description_hi,duration,mode,includes,sample_price,muhurat_note,is_sample`,
   );
   if (!rows.ok) return failed(c, "Poojan");
   const row = rows.rows[0];

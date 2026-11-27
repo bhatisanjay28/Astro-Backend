@@ -4,6 +4,8 @@
  * first and every miss writes back (also warmed nightly by the cron trigger).
  * Pruning keeps only recent days — old dates are always computable on demand.
  */
+
+import { ENGINE_VERSION } from "../engine/panchang";
 import { rest, type SupabaseCreds } from "./supabase";
 
 export interface CachedPanchang {
@@ -18,15 +20,22 @@ export async function getCachedPanchang(
 ): Promise<CachedPanchang | null> {
   const res = await rest(
     creds,
-    `panchang_cache?city_id=eq.${cityId}&date=eq.${date}&select=payload,computed_at&limit=1`,
+    `panchang_cache?city_id=eq.${cityId}&date=eq.${date}&select=payload,engine_version,computed_at&limit=1`,
   );
   if (!res.ok) return null;
   const rows = (await res.json()) as Array<{
     payload: Record<string, unknown>;
+    engine_version: string | null;
     computed_at: string;
   }>;
   const row = rows[0];
-  return row ? { payload: row.payload, computedAt: row.computed_at } : null;
+  if (!row) return null;
+  // S24: rows computed by an older engine lack bilingual names (tithi/yoga/
+  // karana name_hi) — treat them as a miss so the write-through recomputes
+  // with the current engine instead of serving partial localization for the
+  // remaining prune window.
+  if ((row.engine_version ?? "unknown") !== ENGINE_VERSION) return null;
+  return { payload: row.payload, computedAt: row.computed_at };
 }
 
 export async function storePanchang(

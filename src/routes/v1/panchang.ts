@@ -12,6 +12,7 @@
 import { Hono } from "hono";
 import { computePanchang } from "../../engine";
 import type { AppEnv } from "../../env";
+import { localizeNames } from "../../lib/localize";
 import { getCachedPanchang, storePanchang } from "../../lib/panchang-cache";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -51,7 +52,9 @@ panchangRoute.get("/panchang", async (c) => {
     }
     // City-mode: deterministic per (city, date) → panchang_cache write-through
     // (Epic 3.1b). Cache hit returns the stored payload; miss computes + stores.
-    const url = `${supabaseUrl}/rest/v1/cities?slug=eq.${encodeURIComponent(q.city)}&select=id,slug,name,latitude,longitude,timezone`;
+    // S24: payloads are language-neutral (both names) — ?lang=hi localizes at
+    // read time, so one cache row serves both page languages.
+    const url = `${supabaseUrl}/rest/v1/cities?slug=eq.${encodeURIComponent(q.city)}&select=id,slug,name,name_hi,latitude,longitude,timezone`;
     const res = await fetch(url, {
       headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
     });
@@ -62,6 +65,7 @@ panchangRoute.get("/panchang", async (c) => {
       id: string;
       slug: string;
       name: string;
+      name_hi?: string | null;
       latitude: number;
       longitude: number;
       timezone: string;
@@ -71,10 +75,11 @@ panchangRoute.get("/panchang", async (c) => {
       return c.json({ error: { code: "not_found", message: `Unknown city: ${q.city}` } }, 404);
     }
     const creds = { url: supabaseUrl, key: serviceKey };
+    const lang = q.lang;
     const cached = await getCachedPanchang(creds, city.id, date);
     if (cached) {
       return c.json({
-        data: cached.payload,
+        data: localizeNames(cached.payload, lang),
         meta: { cache: "hit", computed_at: cached.computedAt },
       });
     }
@@ -83,7 +88,7 @@ panchangRoute.get("/panchang", async (c) => {
       latitude: city.latitude,
       longitude: city.longitude,
       timezone: city.timezone,
-      city: { slug: city.slug, name: city.name },
+      city: { slug: city.slug, name: city.name, name_hi: city.name_hi ?? undefined },
     });
     await storePanchang(
       creds,
@@ -92,7 +97,7 @@ panchangRoute.get("/panchang", async (c) => {
       city.timezone,
       data as unknown as Record<string, unknown>,
     );
-    return c.json({ data, meta: { cache: "miss" } });
+    return c.json({ data: localizeNames(data, lang), meta: { cache: "miss" } });
   }
 
   if (lat === undefined || lng === undefined || !tz) {
@@ -118,5 +123,5 @@ panchangRoute.get("/panchang", async (c) => {
   }
 
   const data = computePanchang({ date, latitude: lat, longitude: lng, timezone: tz });
-  return c.json({ data });
+  return c.json({ data: localizeNames(data, q.lang) });
 });

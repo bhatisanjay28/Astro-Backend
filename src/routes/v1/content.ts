@@ -118,12 +118,14 @@ contentRoute.get("/content/home", async (c) => {
     restGet<{
       slug: string;
       name: string;
-      title: string;
-      about: string;
+      title: string | null;
+      title_hi: string | null;
+      about: string | null;
+      about_hi: string | null;
       expertise: string[];
       languages: string[];
       experience_years: number | null;
-      price_per_minute: number | null;
+      price_per_minute: string | number | null;
       is_available: boolean;
       availability_label: string;
       accent: string;
@@ -131,14 +133,16 @@ contentRoute.get("/content/home", async (c) => {
     }>(
       supabaseUrl,
       serviceKey,
-      "astrologers?is_active=eq.true&order=sort_order.asc&select=slug,name,title,about,expertise,languages,experience_years,price_per_minute,is_available,availability_label,accent,is_sample",
+      "astrologers?is_active=eq.true&order=sort_order.asc&select=slug,name,title,title_hi,about,about_hi,expertise,languages,experience_years,price_per_minute,is_available,availability_label,accent,is_sample",
     ),
     restGet<{
       slug: string;
       name: string;
+      name_hi: string | null;
       category: string;
       purpose: string | null;
       description: string | null;
+      description_hi: string | null;
       duration: string | null;
       mode: string[];
       includes: string[] | null;
@@ -148,7 +152,7 @@ contentRoute.get("/content/home", async (c) => {
     }>(
       supabaseUrl,
       serviceKey,
-      "pujas?is_active=eq.true&order=sort_order.asc&select=slug,name,category,purpose,description,duration,mode,includes,sample_price,accent,is_sample",
+      "pujas?is_active=eq.true&order=sort_order.asc&select=slug,name,name_hi,category,purpose,description,description_hi,duration,mode,includes,sample_price,accent,is_sample",
     ),
     restGet<{ question: string; answer: string; is_sample: boolean }>(
       supabaseUrl,
@@ -180,7 +184,9 @@ contentRoute.get("/content/home", async (c) => {
         slug: a.slug,
         name: a.name,
         title: a.title,
+        title_hi: a.title_hi,
         about: a.about,
+        about_hi: a.about_hi,
         expertise: a.expertise,
         languages: a.languages,
         experience_years: a.experience_years,
@@ -193,9 +199,11 @@ contentRoute.get("/content/home", async (c) => {
       poojas: puja.rows.map((p) => ({
         slug: p.slug,
         name: p.name,
+        name_hi: p.name_hi,
         category: p.category,
         purpose: p.purpose ?? "",
         description: p.description ?? "",
+        description_hi: p.description_hi,
         duration_label: p.duration ?? "",
         mode: p.mode,
         includes: p.includes ?? [],

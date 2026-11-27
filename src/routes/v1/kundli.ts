@@ -28,6 +28,7 @@ import {
 } from "../../engine";
 import type { AppEnv } from "../../env";
 import { validateBirth } from "../../lib/birth";
+import { localizeCalcValues } from "../../lib/localize";
 
 interface KundliBody {
   date?: string;
@@ -92,27 +93,34 @@ kundliRoute.post("/kundli", async (c) => {
   // Epic 1.9 — echo the resolved engine config for the chart renderer.
   const engineConfig = resolveEngineConfig(body.options).config;
 
+  // S24 — ?lang=hi localizes value strings (signs/grahas/nakshatras/verdict
+  // words); POST body can't carry it, so callers append it as a query param.
+  const lang = c.req.query("lang") === "hi" ? "hi" : "en";
+
   return c.json({
-    data: {
-      birth: {
-        datetime_utc: birthInstant.toISOString(),
-        date,
-        time: birthTime,
-        timezone: tz,
-        latitude: lat,
-        longitude: lng,
+    data: localizeCalcValues(
+      {
+        birth: {
+          datetime_utc: birthInstant.toISOString(),
+          date,
+          time: birthTime,
+          timezone: tz,
+          latitude: lat,
+          longitude: lng,
+        },
+        lagna: asc,
+        grahas,
+        houses,
+        navamsha,
+        divisionals,
+        sade_sati: sadeSatiNow,
+        manglik: manglikNow,
+        kaal_sarp: kaalSarpNow,
+        dasha,
+        engine_version: ENGINE_VERSION,
       },
-      lagna: asc,
-      grahas,
-      houses,
-      navamsha,
-      divisionals,
-      sade_sati: sadeSatiNow,
-      manglik: manglikNow,
-      kaal_sarp: kaalSarpNow,
-      dasha,
-      engine_version: ENGINE_VERSION,
-    },
+      lang,
+    ),
     meta: {
       consent_note: "Birth details are processed on request and are not stored.",
       chart_styles: ["north_indian", "south_indian"],
