@@ -34,6 +34,22 @@ export type Bindings = {
    */
   FRONTEND_DEPLOY_HOOK_URL?: string;
   /**
+   * Optional horoscope-watchdog alert recipient (S23). When set together
+   * with the SEND_EMAIL binding, the watchdog emails ALERT_EMAIL_TO after a
+   * repair run that leaves content still missing/stale. Inert until Cloudflare
+   * Email Routing is enabled on the vyotish.com zone (so the SEND_EMAIL
+   * binding can be declared) and this is set (`wrangler secret put
+   * ALERT_EMAIL_TO`). Alerts always land in horoscope_alerts regardless.
+   */
+  ALERT_EMAIL_TO?: string;
+  /**
+   * Optional send_email binding backing the watchdog alert email — declared
+   * in wrangler.jsonc only after Cloudflare Email Routing is enabled on the
+   * vyotish.com zone. Unset → email alerts skipped (the horoscope_alerts
+   * table and /health still surface every alert).
+   */
+  SEND_EMAIL?: { send: (message: Record<string, string>) => Promise<void> };
+  /**
    * Test opt-out for every rate limiter (login proxy, admin action buckets,
    * booking in-file throttle) — mirrors src/lib/rate-limit.ts. Never set in
    * production.

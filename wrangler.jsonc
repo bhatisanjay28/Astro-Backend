@@ -12,11 +12,19 @@
     "ENV": "development"
   },
   "triggers": {
-    // 18:35 UTC ≈ 00:05 IST — daily horoscope generation for the new IST day
-    //   (Horoscope Upgrade Step 4; runs are idempotent).
-    // 00:15 UTC (05:45 IST) — daily panchang cache warm + prune (Epic 3.1b);
-    //   the scheduled handler runs both jobs on every trigger, both idempotent,
-    //   so the second firing of each is a cheap no-op refresh.
-    "crons": ["35 18 * * *", "15 0 * * *"]
+    // Three SEPARATE schedules so each job gets its own isolate (S23
+    // cron-repair: chaining panchang warm + horoscope compose in one
+    // invocation blew the CPU limit — `exceededResources` — and the horoscope
+    // run never completed). All runs are idempotent; the scheduled handler
+    // dispatches on `event.cron` (src/cron.ts cronJobFor):
+    //   35 18 * * *  = 00:05 IST — daily horoscope generation for the new IST
+    //     day (daily buffer D-1…D+6 + current/next week/month/year) and a
+    //     deploy-hook ping so the static frontend re-bakes (Horoscope Upgrade
+    //     Step 4).
+    //   15 0 * * *   = 05:45 IST — daily panchang cache warm + prune (Epic 3.1b).
+    //   50 0 * * *   = 06:20 IST — horoscope watchdog: verify today's IST
+    //     content, re-run generation + re-ping the hook if a run was missed,
+    //     write horoscope_alerts (+ optional alert email) if still unhealthy.
+    "crons": ["35 18 * * *", "15 0 * * *", "50 0 * * *"]
   }
 }

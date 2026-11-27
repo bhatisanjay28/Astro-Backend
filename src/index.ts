@@ -1,11 +1,22 @@
 import app from "./app";
-import { runHoroscopeGeneration, warmPanchangCache } from "./cron";
+import {
+  cronJobFor,
+  runHoroscopeGeneration,
+  runHoroscopeWatchdogJob,
+  warmPanchangCache,
+} from "./cron";
 
 /**
  * Worker entry point (production: `wrangler deploy`).
- * The Hono app's fetch handler is the Worker fetch export; the cron trigger
- * (wrangler.jsonc) warms/prunes the panchang cache daily (Epic 3.1b) and then
- * generates/validates/publishes horoscope rows (Horoscope Upgrade Step 4).
+ * The Hono app's fetch handler is the Worker fetch export; three cron
+ * triggers (wrangler.jsonc) dispatch via cronJobFor — each job gets its OWN
+ * invocation (S23: chaining panchang warm + horoscope compose in one isolate
+ * blew the CPU limit and silently killed the horoscope run every day):
+ *   15 0 * * *  (05:45 IST) → panchang cache warm + prune
+ *   35 18 * * * (00:05 IST) → horoscope generation + deploy-hook ping
+ *   50 0 * * *  (06:20 IST) → watchdog (self-heal + alert)
+ * Any unrecognised expression (ops one-off trigger) runs horoscope
+ * generation too.
  */
 export default {
   fetch: app.fetch,
@@ -13,15 +24,25 @@ export default {
   // returning before that lets Cloudflare kill a mid-run generation
   // (the horoscope pass composes ~800 ephemeris snapshots).
   scheduled: (
-    event: unknown,
+    event: { cron: string },
     env: unknown,
     ctx: { waitUntil: (promise: Promise<unknown>) => void },
   ) => {
+    const job = cronJobFor(event.cron);
     ctx.waitUntil(
       (async () => {
-        await warmPanchangCache(env as never).catch((err) =>
-          console.error("[cron] panchang warm failed:", err),
-        );
+        if (job === "panchang") {
+          await warmPanchangCache(env as never).catch((err) =>
+            console.error("[cron] panchang warm failed:", err),
+          );
+          return;
+        }
+        if (job === "watchdog") {
+          await runHoroscopeWatchdogJob(env as never).catch((err) =>
+            console.error("[cron] horoscope watchdog failed:", err),
+          );
+          return;
+        }
         await runHoroscopeGeneration(env as never).catch((err) =>
           console.error("[cron] horoscope generation failed:", err),
         );

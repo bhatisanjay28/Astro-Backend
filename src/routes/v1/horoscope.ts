@@ -13,8 +13,10 @@
  * labels, lucky "why" templates…) ship in `blocks` from content_blocks —
  * D12: content lives behind the API, not in code.
  *
- * Fallback ladder per period: dated row → legacy `date_key=rolling` row →
- * empty `signs: []` (UI renders its built-in sample lines; honest empty).
+ * Fallback ladder per period (S23): dated row → latest earlier dated row
+ * (reported with its REAL date_key + stale:true — never a wrong date) →
+ * legacy `date_key=rolling` row → empty `signs: []` (UI renders its built-in
+ * sample lines; honest empty).
  *
  * Query: ?period=daily|yesterday|tomorrow|weekly|monthly|yearly (default daily)
  *        ?lang=en|hi (default en)
@@ -119,7 +121,8 @@ horoscopeRoute.get("/horoscope", async (c) => {
 
   const { period: resolvedPeriod, dateKey } = resolveCurrent(period, new Date());
 
-  // ladder: dated generator row → legacy rolling row → empty
+  // ladder: dated generator row → latest earlier dated row (real date +
+  // stale flag — S23 "never a wrong date") → legacy rolling row → empty
   const fetchRows = async (p: string, dk: string): Promise<HoroscopeRow[]> => {
     const params = new URLSearchParams({
       period: `eq.${p}`,
@@ -135,9 +138,40 @@ horoscopeRoute.get("/horoscope", async (c) => {
     return (await res.json()) as HoroscopeRow[];
   };
 
+  /** Latest published dateKey ≤ `beforeInclusive` for this period (all key
+   * formats — daily/weekly dates, YYYY-MM, YYYY — sort lexicographically). */
+  const fetchLatestKey = async (p: string, beforeInclusive: string): Promise<string | null> => {
+    const params = new URLSearchParams({
+      period: `eq.${p}`,
+      lang: `eq.${lang}`,
+      status: "eq.published",
+      date_key: `lte.${beforeInclusive}`,
+      select: "date_key",
+      order: "date_key.desc",
+      limit: "1",
+    });
+    if (sign) params.set("sign", `eq.${sign}`);
+    const res = await rest(creds, `horoscopes?${params.toString()}`);
+    if (!res.ok) return null; // staleness rung is best-effort
+    const list = (await res.json()) as Array<{ date_key: string }>;
+    return list[0]?.date_key ?? null;
+  };
+
   let rows: HoroscopeRow[];
+  // the date_key the response reports — the CONTENT's own key, not the
+  // requested one (they differ only on the stale rung)
+  let servedKey = dateKey;
+  let stale = false;
   try {
     rows = await fetchRows(resolvedPeriod, dateKey);
+    if (rows.length === 0) {
+      const latest = await fetchLatestKey(resolvedPeriod, dateKey);
+      if (latest && latest !== dateKey) {
+        rows = await fetchRows(resolvedPeriod, latest);
+        servedKey = latest;
+        stale = true;
+      }
+    }
     // Legacy rolling rows exist for period='daily' only (migration 0003 seed),
     // so every tab falls back to that same batch.
     if (rows.length === 0) rows = await fetchRows("daily", "rolling");
@@ -170,7 +204,12 @@ horoscopeRoute.get("/horoscope", async (c) => {
     data: {
       period,
       resolved_period: resolvedPeriod,
-      date_key: dateKey,
+      date_key: servedKey,
+      /** the IST key the tab asked for — differs from date_key only when the
+       * content served is the latest available (stale rung) */
+      requested_date_key: dateKey,
+      /** true → content is older than the requested window; the UI labels it */
+      stale,
       lang,
       range: payloadRows[0]?.payload?.range ?? null,
       blocks,
