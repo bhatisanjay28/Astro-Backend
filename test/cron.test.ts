@@ -279,8 +279,10 @@ describe("runHoroscopeWatchdog (live flow)", () => {
     const outcome = await runHoroscopeWatchdog(
       { ...CREDS, FRONTEND_DEPLOY_HOOK_URL: HOOK_URL },
       async () => {
-        // the repair publishes today's rows + writes a fresh run log
-        spec.counts["daily@2026-11-27"] = 24;
+        // the repair publishes today's rows + writes a fresh run log (the
+        // daily key must stay clock-derived — a fixed date rots at IST midnight)
+        const dailyKey = Object.keys(spec.counts).find((k) => k.startsWith("daily@"));
+        if (dailyKey) spec.counts[dailyKey] = 24;
         spec.lastRun = { ranAt: new Date().toISOString(), status: "success", published: 24 };
         return okRun(24);
       },
