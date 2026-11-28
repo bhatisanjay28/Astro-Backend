@@ -32,6 +32,9 @@ export type AdminContext = {
   role: AdminRole;
   display_name: string | null;
   is_active: boolean;
+  /** Phase 5 — direct-created accounts must set a new password at first login
+   * (requireAdmin 403s every /admin/* route until POST /auth/change-password). */
+  must_change_password: boolean;
   /** authenticator assurance level from the validated token (1 password-only, 2 MFA) */
   aal: 1 | 2;
   /** capabilities granted by the role (rbac.ts) — convenience for /admin/me */
@@ -53,6 +56,7 @@ type AdminUserRow = {
   role: AdminRole;
   is_active?: boolean | null;
   display_name?: string | null;
+  must_change_password?: boolean | null;
 };
 
 /** Absolute cap on a presented access token's age (iat), in seconds: 12 h. */
@@ -117,7 +121,7 @@ export async function resolveAdmin(
   let roleRes: Response;
   try {
     roleRes = await fetch(
-      `${supabaseUrl}/rest/v1/admin_users?user_id=eq.${encodeURIComponent(user.id)}&select=user_id,email,role,is_active,display_name`,
+      `${supabaseUrl}/rest/v1/admin_users?user_id=eq.${encodeURIComponent(user.id)}&select=user_id,email,role,is_active,display_name,must_change_password`,
       { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } },
     );
   } catch {
@@ -139,6 +143,7 @@ export async function resolveAdmin(
       display_name: row.display_name ?? null,
       // the deactivated guard above already returned; anything past it is active
       is_active: true,
+      must_change_password: row.must_change_password === true,
       aal,
       capabilities: capabilitiesOf(row.role),
     },
@@ -228,6 +233,23 @@ export function requireAdmin(options: RequireAdminOptions = {}) {
           error: {
             code: "forbidden",
             message: "Multi-factor authentication is required for this action.",
+          },
+        },
+        403,
+      );
+    }
+
+    // Phase 5 — a direct-created account cannot touch the panel (or any admin
+    // API) until it has replaced its one-time temp password. /auth/change-
+    // password lives OUTSIDE this middleware, so the reset itself stays
+    // reachable; the UI detects this code from /admin/me and shows the
+    // first-login form.
+    if (result.admin.must_change_password) {
+      return c.json(
+        {
+          error: {
+            code: "password_change_required",
+            message: "Set a new password before using the admin panel.",
           },
         },
         403,

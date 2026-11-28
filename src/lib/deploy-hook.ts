@@ -2,20 +2,24 @@
  * Shared CF Pages deploy-hook ping (build trigger for the static frontend,
  * which re-bakes build-time SSR on rebuild). The horoscope cron pings after
  * a publishing run; the admin nav route pings after a nav config save so
- * the build-time merge (frontend scripts/ sync) picks up the new DB keys.
+ * the build-time merge (frontend scripts/ sync) picks up the new DB keys;
+ * Phase 5 — the content-blocks route pings after a `legal.*` write so the
+ * static Trust & Legal pages re-bake with the DB override.
  *
  * Contract: fire-and-forget — a hook failure is logged, never thrown (the
  * next push-triggered deploy catches up).
  */
 export async function pingFrontendDeployHook(
   url: string,
-  reason: { source: "cron" | "nav_save"; published?: number },
+  reason: { source: "cron" | "nav_save" | "legal_save"; published?: number },
 ): Promise<void> {
   try {
     const body =
       reason.source === "cron"
         ? { horoscope: { published: reason.published ?? 0 } }
-        : { nav_save: true };
+        : reason.source === "legal_save"
+          ? { legal_save: true }
+          : { nav_save: true };
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

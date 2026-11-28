@@ -9,6 +9,7 @@
 import { Hono } from "hono";
 import type { AppEnvWithAdmin } from "../../../env";
 import { writeAudit } from "../../../lib/audit";
+import { pingFrontendDeployHook } from "../../../lib/deploy-hook";
 import { sanitizeDeep } from "../../../lib/posts";
 import { rest, supabaseCreds } from "../../../lib/supabase";
 
@@ -19,6 +20,22 @@ export const adminBlocksRoute = new Hono<Env>();
 const KEY_RE = /^[a-z0-9_.-]{1,80}$/;
 const LANGS = ["en", "hi"];
 const STATUSES = ["draft", "published"];
+
+/**
+ * Phase 5 — Trust & Legal docs are content_blocks under the `legal.` prefix;
+ * the public pages are PRERENDERED, so a write must trigger the Pages deploy
+ * hook or the edit stays invisible on vyotish.com until the next deploy.
+ * Unconditional ping (A2 review: no payload change-detection — matches the
+ * watchdog; an identical save costs one extra rebuild). Awaited so the HTTP
+ * response lands after the hook call (test determinism).
+ */
+async function legalPing(c: { env?: { FRONTEND_DEPLOY_HOOK_URL?: string } }) {
+  if (c.env?.FRONTEND_DEPLOY_HOOK_URL) {
+    // never rejects (deploy-hook contract), so awaiting is safe and keeps
+    // the request — and any test assertion — deterministic
+    await pingFrontendDeployHook(c.env.FRONTEND_DEPLOY_HOOK_URL, { source: "legal_save" });
+  }
+}
 
 function credsMissing(c: any) {
   return c.json(
@@ -155,6 +172,7 @@ adminBlocksRoute.put("/admin/content-blocks/:key", async (c) => {
       payload_keys: Object.keys((body.payload ?? {}) as Record<string, unknown>).slice(0, 25),
     },
   });
+  if (key.startsWith("legal.")) await legalPing(c);
   return c.json({ data: rows[0] ?? { block_key: key, lang, status, payload: body.payload } });
 });
 
@@ -190,5 +208,8 @@ adminBlocksRoute.delete("/admin/content-blocks/:key", async (c) => {
     entity_id: key,
     details: { lang },
   });
+  // Deleting a legal override is itself a content change — the page falls
+  // back to the in-repo dict on the next rebuild.
+  if (key.startsWith("legal.")) await legalPing(c);
   return c.json({ data: { block_key: key, lang, deleted: true } });
 });

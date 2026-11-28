@@ -14,6 +14,7 @@ import { Hono } from "hono";
 import type { AppEnv } from "../../env";
 import { decodeJwtPayload } from "../../lib/admin-auth";
 import { writeAudit } from "../../lib/audit";
+import { rest } from "../../lib/supabase";
 import { captchaRequired, verifyTurnstile } from "../../lib/turnstile";
 
 type Env = AppEnv;
@@ -153,6 +154,93 @@ authRoute.post("/auth/logout", async (c) => {
     { error: { code: "upstream_error", message: "Sign-out failed — try again." } },
     502,
   );
+});
+
+/**
+ * Phase 5 — first-login password set (self-service). A direct-created admin
+ * account signs in with its one-time temp password, is 403'd on /admin/*
+ * (password_change_required) and lands on /admin/first-login, which calls
+ * this route. OUTSIDE requireAdmin on purpose — the reset must stay reachable
+ * while the flag is set; the caller's own bearer is the credential.
+ *
+ * The password hash is computed and stored by Supabase Auth (PUT /auth/v1/user
+ * with the user's own token — which also validates that token); this proxy
+ * never sees password material beyond the request body it forwards.
+ * Body: { new_password } — ≥12 chars incl. a letter and a digit.
+ */
+authRoute.post("/auth/change-password", async (c) => {
+  const creds0 = creds(c);
+  if (!creds0) {
+    return c.json(
+      { error: { code: "service_unavailable", message: "Auth requires backend credentials." } },
+      503,
+    );
+  }
+  const body = (await c.req.json().catch(() => ({}))) as { new_password?: unknown };
+  const newPassword = typeof body.new_password === "string" ? body.new_password : "";
+  if (newPassword.length < 12 || !/[A-Za-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+    return c.json(
+      {
+        error: {
+          code: "validation_error",
+          message: "new_password must be at least 12 characters and include a letter and a digit.",
+        },
+      },
+      400,
+    );
+  }
+  const authHeader = c.req.header("Authorization") ?? "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+  if (!token) {
+    return c.json(
+      {
+        error: { code: "unauthorized", message: "Authentication required: supply a Bearer token." },
+      },
+      401,
+    );
+  }
+
+  const res = await fetch(`${creds0.url}/auth/v1/user`, {
+    method: "PUT",
+    headers: {
+      apikey: creds0.key,
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ password: newPassword }),
+  });
+  if (!res.ok) {
+    if (res.status === 401 || res.status === 403) {
+      return c.json(
+        { error: { code: "unauthorized", message: "Invalid or expired access token." } },
+        401,
+      );
+    }
+    console.error(`change-password: Supabase user update failed (${res.status})`);
+    return c.json(
+      { error: { code: "upstream_error", message: "Password update failed — try again." } },
+      502,
+    );
+  }
+
+  // Supabase validated the token, so decoding the sub is safe (logout
+  // precedent). Clear the first-login flag for admin rows; a non-admin
+  // account simply has no row and the write matches nothing.
+  const claims = decodeJwtPayload(token) as { sub?: unknown } | null;
+  const actor = typeof claims?.sub === "string" ? claims.sub : null;
+  if (actor) {
+    await rest(creds0, `admin_users?user_id=eq.${encodeURIComponent(actor)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ must_change_password: false, updated_at: new Date().toISOString() }),
+    });
+    await writeAudit(creds0, {
+      actor,
+      action: "auth.password_change",
+      entity: "auth",
+      entity_id: actor,
+    });
+  }
+  return c.json({ data: { ok: true } });
 });
 
 authRoute.post("/auth/refresh", async (c) => {

@@ -151,6 +151,9 @@ adminRoute.get("/admin/me", (c) => {
       role: admin.role,
       display_name: admin.display_name,
       is_active: admin.is_active,
+      /** Phase 5 — true while a direct-created account still owes its
+       * first-login password set (panel redirects to /admin/first-login). */
+      must_change_password: admin.must_change_password,
       /** authenticator assurance level of the presenting token (MFA readiness) */
       aal: admin.aal,
       /** role capabilities — for UI affordances only; the API remains the gate */

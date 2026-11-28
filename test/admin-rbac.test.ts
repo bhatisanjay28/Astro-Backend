@@ -41,6 +41,7 @@ type AdminRow = {
   role?: string;
   is_active?: boolean;
   display_name?: string | null;
+  must_change_password?: boolean;
 };
 
 type MockSpec = {
@@ -78,6 +79,7 @@ function mockSupabase(spec: MockSpec = {}) {
                   role: row.role,
                   is_active: row.is_active ?? true,
                   display_name: row.display_name ?? null,
+                  must_change_password: row.must_change_password ?? false,
                 },
               ],
         ),
@@ -405,6 +407,32 @@ describe("capability gates (HTTP)", () => {
     expect(ok.status).toBe(200);
     const body = (await ok.json()) as { data: { role: string } | null };
     expect(body.data?.role).toBe("booking_manager");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 3b. Phase 5 — first-login flag enforcement (pinned, story AC 4)
+// ---------------------------------------------------------------------------
+describe("must_change_password gate (Phase 5, pinned)", () => {
+  it("403s every /admin/* route with password_change_required while the flag is set", async () => {
+    mockSupabase({ adminRow: { role: "super_admin", must_change_password: true } });
+    const users = await app.request("/api/v1/admin/users", authed(fakeJwt()), BINDINGS);
+    expect(users.status).toBe(403);
+    const usersBody = (await users.json()) as { error: { code: string } };
+    expect(usersBody.error.code).toBe("password_change_required");
+
+    const me = await app.request("/api/v1/admin/me", authed(fakeJwt()), BINDINGS);
+    expect(me.status).toBe(403);
+    const meBody = (await me.json()) as { error: { code: string } };
+    expect(meBody.error.code).toBe("password_change_required");
+  });
+
+  it("/admin/me reports must_change_password=false for a settled account", async () => {
+    mockSupabase({ adminRow: { role: "super_admin" } });
+    const res = await app.request("/api/v1/admin/me", authed(fakeJwt()), BINDINGS);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { must_change_password: boolean } };
+    expect(body.data.must_change_password).toBe(false);
   });
 });
 

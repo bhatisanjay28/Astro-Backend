@@ -14,6 +14,9 @@ interface WindowConfig {
 const WINDOWS: Record<string, WindowConfig> = {
   "/api/v1/auth/login": { limit: 10, seconds: 60 },
   "/api/v1/auth/refresh": { limit: 20, seconds: 60 },
+  // Phase 5 — first-login password set (needs a valid bearer, but it is a
+  // password-bearing POST; keep it in the same class as login)
+  "/api/v1/auth/change-password": { limit: 10, seconds: 60 },
   "/api/v1/newsletter": { limit: 5, seconds: 60 },
   "/api/v1/requests/consultation": { limit: 5, seconds: 60 },
   "/api/v1/requests/puja": { limit: 5, seconds: 60 },
